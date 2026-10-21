@@ -1,3 +1,4 @@
+// Modified for Oxfmt: reuse ancestor paths across all long lines in a pass.
 use std::borrow::Cow;
 use std::mem::take;
 
@@ -11,7 +12,7 @@ use strum_macros::EnumString;
 
 use super::elements::{ReflowBlock, ReflowElement, ReflowPoint, ReflowSequenceType};
 use super::helpers::fixes_from_results;
-use super::rebreak::{LinePosition, RebreakSpan, identify_rebreak_spans};
+use super::rebreak::{LinePosition, RebreakPathCache, RebreakSpan, identify_rebreak_spans};
 use crate::core::rules::LintResult;
 use crate::utils::reflow::elements::IndentStats;
 
@@ -2018,6 +2019,7 @@ pub fn lint_line_length(
         return (elements.clone(), Vec::new());
     }
 
+    let paths = RebreakPathCache::default();
     let mut elem_buffer = elements.clone();
     let mut line_buffer = Vec::new();
     let mut results = Vec::new();
@@ -2065,7 +2067,7 @@ pub fn lint_line_length(
             let mut combined_elements = line_elements.clone();
             combined_elements.push(elements[i + 1].clone());
 
-            let spans = identify_rebreak_spans(&combined_elements, root_segment);
+            let spans = identify_rebreak_spans(&combined_elements, root_segment, &paths);
             let rebreak_priorities = rebreak_priorities(spans, combined_elements.len());
 
             let matched_indents =

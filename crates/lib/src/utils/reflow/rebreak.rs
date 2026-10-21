@@ -1,10 +1,14 @@
+// Modified for Oxfmt: share ancestor paths across long-line/rebreak lookups.
+use std::cell::OnceCell;
 use std::cmp::PartialEq;
+
+use hashbrown::HashMap;
 use std::str::FromStr;
 
 use sqruff_lib_core::dialects::syntax::SyntaxKind;
 use sqruff_lib_core::helpers::capitalize;
 use sqruff_lib_core::lint_fix::LintFix;
-use sqruff_lib_core::parser::segments::{ErasedSegment, Tables};
+use sqruff_lib_core::parser::segments::{ErasedSegment, PathStep, Tables};
 use strum_macros::{AsRefStr, EnumString};
 
 use super::elements::{ReflowElement, ReflowSequenceType};
@@ -166,9 +170,34 @@ impl RebreakLocation {
     }
 }
 
+/// Ancestor paths belong to one immutable root and one reflow pass. Keeping them
+/// here avoids both repeated whole-tree searches and Rc cycles inside the tree.
+#[derive(Default)]
+pub struct RebreakPathCache {
+    paths: OnceCell<HashMap<u32, Vec<PathStep>>>,
+}
+
+impl RebreakPathCache {
+    fn ancestor(&self, root: &ErasedSegment, raw: &ErasedSegment, depth: usize) -> ErasedSegment {
+        let paths = self.paths.get_or_init(|| {
+            root.raw_segments_with_ancestors()
+                .into_iter()
+                .map(|(raw, path)| (raw.id(), path))
+                .collect()
+        });
+        if let Some(path) = paths.get(&raw.id()) {
+            path[depth].segment.clone()
+        } else {
+            // Reflow may supply an equivalent segment with a different ID.
+            root.path_to(raw)[depth].segment.clone()
+        }
+    }
+}
+
 pub fn identify_rebreak_spans(
     element_buffer: &ReflowSequenceType,
     root_segment: &ErasedSegment,
+    paths: &RebreakPathCache,
 ) -> Vec<RebreakSpan> {
     let mut spans = Vec::new();
 
@@ -239,9 +268,11 @@ pub fn identify_rebreak_spans(
                     .iter()
                     .position(|it| it == key)
                     .unwrap();
-                let target = root_segment.path_to(&element_buffer[idx].segments()[0])[target_depth]
-                    .segment
-                    .clone();
+                let target = paths.ancestor(
+                    root_segment,
+                    &element_buffer[idx].segments()[0],
+                    target_depth,
+                );
 
                 let line_position_config = block.line_position_configs()[key];
 
@@ -381,7 +412,7 @@ pub fn rebreak_sequence(
     // side to respace them at the same time.
 
     // 1. First find appropriate spans.
-    let spans = identify_rebreak_spans(&elem_buff, root_segment);
+    let spans = identify_rebreak_spans(&elem_buff, root_segment, &RebreakPathCache::default());
     let locations = locations_from_spans(spans, &elements);
 
     // Handle each span:

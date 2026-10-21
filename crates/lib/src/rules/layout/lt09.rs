@@ -1,3 +1,4 @@
+// Modified for Oxfmt: do not undo long-line wrapping for a single SELECT target.
 use hashbrown::HashMap;
 use itertools::{Itertools, enumerate};
 use sqruff_lib_core::dialects::syntax::{SyntaxKind, SyntaxSet};
@@ -369,6 +370,31 @@ impl RuleLT09 {
             .descendant_type_set()
             .contains(SyntaxKind::Newline)
         {
+            return Vec::new();
+        }
+
+        // LT05 may have moved a long target off the SELECT line. Moving it
+        // back would alternate between two layouts on successive format runs.
+        let max_line_length = context
+            .config
+            .get("max_line_length", "core")
+            .as_int()
+            .unwrap_or(0);
+        let select = &select_children[select_idx];
+        let start_column = select
+            .get_position_marker()
+            .map_or(1, |pos| pos.working_line_pos);
+        let modifier_length = select_children
+            .iter()
+            .filter(|segment| segment.is_type(SyntaxKind::SelectClauseModifier))
+            .map(|segment| segment.raw().chars().count() + 1)
+            .sum::<usize>();
+        let line_length = start_column.saturating_sub(1)
+            + select.raw().chars().count()
+            + 1
+            + modifier_length
+            + target_seg.raw().chars().count();
+        if max_line_length > 0 && line_length > max_line_length as usize {
             return Vec::new();
         }
 

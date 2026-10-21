@@ -1,3 +1,4 @@
+// Modified for Oxfmt: parse OVERLAY/quantified arrays and preserve VARIADIC spacing.
 use itertools::Itertools;
 use sqruff_lib_core::dialects::Dialect;
 use sqruff_lib_core::dialects::init::DialectKind;
@@ -1631,6 +1632,32 @@ pub fn raw_dialect() -> Dialect {
 
     postgres.replace_grammar("ArrayTypeSegment", Ref::keyword("ARRAY").to_matchable());
 
+    // PostgreSQL permits an array expression as well as a subquery in ANY,
+    // ALL and SOME. Prefer the expression when both alternatives consume the
+    // bracket contents: a greedy SELECT recovery is not a successful parse.
+    postgres.replace_grammar(
+        "QuantifiedComparisonOperatorGrammar",
+        Sequence::new(vec![
+            Ref::new("ComparisonOperatorGrammar").to_matchable(),
+            one_of(vec![
+                Ref::keyword("ALL").to_matchable(),
+                Ref::keyword("ANY").to_matchable(),
+                Ref::keyword("SOME").to_matchable(),
+            ])
+            .to_matchable(),
+            Bracketed::new(vec![
+                one_of(vec![
+                    Ref::new("ExpressionSegment").to_matchable(),
+                    Ref::new("SelectableGrammar").to_matchable(),
+                ])
+                .to_matchable(),
+            ])
+            .config(|this| this.parse_mode(ParseMode::Greedy))
+            .to_matchable(),
+        ])
+        .to_matchable(),
+    );
+
     postgres.add([(
         "ArrayTypeSuffixSegment".into(),
         NodeMatcher::new(SyntaxKind::ArrayTypeSuffix, |_| {
@@ -1644,25 +1671,9 @@ pub fn raw_dialect() -> Dialect {
         .into(),
     )]);
 
-    postgres.replace_grammar(
-        "TypedArrayLiteralSegment",
-        Sequence::new(vec![
-            Sequence::new(vec![
-                Ref::keyword("VARIADIC").to_matchable(),
-                Sequence::new(vec![
-                    Ref::new("NakedIdentifierSegment").to_matchable(),
-                    Ref::new("WalrusOperatorSegment").to_matchable(),
-                ])
-                .config(|this| this.optional())
-                .to_matchable(),
-            ])
-            .config(|this| this.optional())
-            .to_matchable(),
-            Ref::new("ArrayTypeSegment").to_matchable(),
-            Ref::new("ArrayLiteralSegment").to_matchable(),
-        ])
-        .to_matchable(),
-    );
+    // VARIADIC belongs to FunctionContentsExpressionGrammar, outside the
+    // TypedArrayLiteral node. Including it in that node makes its touch
+    // spacing turn `VARIADIC ARRAY[...]` into the identifier `VARIADICARRAY`.
 
     postgres.add([(
         "IndexAccessMethodSegment".into(),
@@ -9616,6 +9627,26 @@ pub fn raw_dialect() -> Dialect {
         .copy(
             Some(vec![
                 position_function_contents(true),
+                Sequence::new(vec![
+                    Ref::new("ExpressionSegment")
+                        .terminators(vec![Ref::keyword("PLACING").to_matchable()])
+                        .to_matchable(),
+                    Ref::keyword("PLACING").to_matchable(),
+                    Ref::new("ExpressionSegment")
+                        .terminators(vec![Ref::keyword("FROM").to_matchable()])
+                        .to_matchable(),
+                    Ref::keyword("FROM").to_matchable(),
+                    Ref::new("ExpressionSegment")
+                        .terminators(vec![Ref::keyword("FOR").to_matchable()])
+                        .to_matchable(),
+                    Sequence::new(vec![
+                        Ref::keyword("FOR").to_matchable(),
+                        Ref::new("ExpressionSegment").to_matchable(),
+                    ])
+                    .config(|this| this.optional())
+                    .to_matchable(),
+                ])
+                .to_matchable(),
                 Delimited::new(vec![
                     Sequence::new(vec![
                         Ref::new("ExpressionSegment").to_matchable(),
