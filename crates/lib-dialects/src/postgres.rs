@@ -1,3 +1,4 @@
+// Modified for Oxfmt: parse OVERLAY and quantified array expressions.
 use itertools::Itertools;
 use sqruff_lib_core::dialects::Dialect;
 use sqruff_lib_core::dialects::init::DialectKind;
@@ -1630,6 +1631,32 @@ pub fn raw_dialect() -> Dialect {
     postgres.replace_grammar("DatatypeSegment", build_datatype_segment_grammar(false));
 
     postgres.replace_grammar("ArrayTypeSegment", Ref::keyword("ARRAY").to_matchable());
+
+    // PostgreSQL permits an array expression as well as a subquery in ANY,
+    // ALL and SOME. Prefer the expression when both alternatives consume the
+    // bracket contents: a greedy SELECT recovery is not a successful parse.
+    postgres.replace_grammar(
+        "QuantifiedComparisonOperatorGrammar",
+        Sequence::new(vec![
+            Ref::new("ComparisonOperatorGrammar").to_matchable(),
+            one_of(vec![
+                Ref::keyword("ALL").to_matchable(),
+                Ref::keyword("ANY").to_matchable(),
+                Ref::keyword("SOME").to_matchable(),
+            ])
+            .to_matchable(),
+            Bracketed::new(vec![
+                one_of(vec![
+                    Ref::new("ExpressionSegment").to_matchable(),
+                    Ref::new("SelectableGrammar").to_matchable(),
+                ])
+                .to_matchable(),
+            ])
+            .config(|this| this.parse_mode(ParseMode::Greedy))
+            .to_matchable(),
+        ])
+        .to_matchable(),
+    );
 
     postgres.add([(
         "ArrayTypeSuffixSegment".into(),
@@ -9637,6 +9664,26 @@ pub fn raw_dialect() -> Dialect {
         .copy(
             Some(vec![
                 position_function_contents(true),
+                Sequence::new(vec![
+                    Ref::new("ExpressionSegment")
+                        .terminators(vec![Ref::keyword("PLACING").to_matchable()])
+                        .to_matchable(),
+                    Ref::keyword("PLACING").to_matchable(),
+                    Ref::new("ExpressionSegment")
+                        .terminators(vec![Ref::keyword("FROM").to_matchable()])
+                        .to_matchable(),
+                    Ref::keyword("FROM").to_matchable(),
+                    Ref::new("ExpressionSegment")
+                        .terminators(vec![Ref::keyword("FOR").to_matchable()])
+                        .to_matchable(),
+                    Sequence::new(vec![
+                        Ref::keyword("FOR").to_matchable(),
+                        Ref::new("ExpressionSegment").to_matchable(),
+                    ])
+                    .config(|this| this.optional())
+                    .to_matchable(),
+                ])
+                .to_matchable(),
                 Delimited::new(vec![
                     Sequence::new(vec![
                         Ref::new("ExpressionSegment").to_matchable(),

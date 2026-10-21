@@ -1,6 +1,8 @@
+// Modified for Oxfmt: index comment-clause tokens once instead of searching the
+// whole syntax tree for every token on every long line.
 use hashbrown::{HashMap, HashSet};
 use itertools::enumerate;
-use sqruff_lib_core::dialects::syntax::SyntaxKind;
+use sqruff_lib_core::dialects::syntax::{SyntaxKind, SyntaxSet};
 use sqruff_lib_core::parser::segments::BlockType;
 
 use crate::core::config::Value;
@@ -118,52 +120,54 @@ FROM my_table
         }
 
         if self.ignore_comment_clauses {
-            let raw_segments = context.segment.get_raw_segments();
-            for (res_idx, res) in enumerate(&results) {
-                let raw_idx = raw_segments
+            let max_line_length = context
+                .config
+                .get("max_line_length", "core")
+                .as_int()
+                .unwrap();
+            let comment_tokens: HashSet<_> = context
+                .segment
+                .recursive_crawl(
+                    &SyntaxSet::new(&[SyntaxKind::CommentClause, SyntaxKind::CommentEqualsClause]),
+                    true,
+                    &SyntaxSet::EMPTY,
+                    false,
+                )
+                .into_iter()
+                .filter(|clause| {
+                    (clause.get_position_marker().unwrap().working_line_pos as i32)
+                        < max_line_length
+                })
+                .flat_map(|clause| {
+                    clause
+                        .get_raw_segments()
+                        .iter()
+                        .map(|seg| seg.id())
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+
+            if !comment_tokens.is_empty() {
+                let raw_segments = context.segment.get_raw_segments();
+                let raw_indices: HashMap<_, _> = raw_segments
                     .iter()
-                    .position(|it| it == res.anchor.as_ref().unwrap())
-                    .unwrap();
-
-                for seg in &raw_segments[raw_idx..] {
-                    if seg.get_position_marker().unwrap().working_line_no
-                        != res
-                            .anchor
-                            .as_ref()
-                            .unwrap()
-                            .get_position_marker()
-                            .unwrap()
-                            .working_line_no
+                    .enumerate()
+                    .map(|(idx, seg)| (seg.id(), idx))
+                    .collect();
+                for (res_idx, res) in enumerate(&results) {
+                    let anchor = res.anchor.as_ref().unwrap();
+                    let raw_idx = raw_indices.get(&anchor.id()).copied().unwrap_or_else(|| {
+                        raw_segments.iter().position(|seg| seg == anchor).unwrap()
+                    });
+                    let line = anchor.get_position_marker().unwrap().working_line_no;
+                    if raw_segments[raw_idx..]
+                        .iter()
+                        .take_while(|seg| {
+                            seg.get_position_marker().unwrap().working_line_no == line
+                        })
+                        .any(|seg| comment_tokens.contains(&seg.id()))
                     {
-                        break;
-                    }
-
-                    let mut is_break = false;
-
-                    for ps in context.segment.path_to(seg) {
-                        if ps.segment.is_type(SyntaxKind::CommentClause)
-                            || ps.segment.is_type(SyntaxKind::CommentEqualsClause)
-                        {
-                            let line_pos =
-                                ps.segment.get_position_marker().unwrap().working_line_pos;
-                            if (line_pos as i32)
-                                < context
-                                    .config
-                                    .get("max_line_length", "core")
-                                    .as_int()
-                                    .unwrap()
-                            {
-                                to_remove.insert(res_idx);
-                                is_break = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if is_break {
-                        break;
-                    } else {
-                        continue;
+                        to_remove.insert(res_idx);
                     }
                 }
             }
