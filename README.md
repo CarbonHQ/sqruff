@@ -28,9 +28,49 @@ Try it in the browser: https://playground.quary.dev
 
 ## Table of contents
 
-1. [Quickstart](#quickstart)
-2. [Editor integrations](#editor-integrations)
-3. [Documentation](#documentation)
+1. [About this fork](#about-this-fork)
+2. [Quickstart](#quickstart)
+3. [Editor integrations](#editor-integrations)
+4. [Documentation](#documentation)
+
+## About this fork
+
+[CarbonHQ's `oxfmt` branch](https://github.com/CarbonHQ/sqruff/tree/oxfmt)
+supplies the Rust SQL backend for [our Oxfmt fork](https://github.com/CarbonHQ/oxc/tree/sql).
+It follows upstream Sqruff; Oxfmt pins these crates by Git revision rather than
+vendoring a source copy.
+
+The retained changes address SQL found in CarbonHQ's PostgreSQL monorepo:
+
+- Parse quantified comparisons with PostgreSQL array constructors and `OVERLAY`
+  arguments containing expressions, so valid application SQL can be formatted.
+- Key SELECT-target parse caches by their input to prevent incorrect reuse across
+  embedded query shapes, including incomplete nested CTEs.
+- Find long-line comment clauses by token identity rather than byte/character
+  offsets, preserving comment text and avoiding repeated scans.
+- Keep long single-target SELECT formatting stable across repeated runs.
+- Add indentation scopes for INSERT targets and VALUES rows, FILTER conditions,
+  partial-index WHERE conditions, CREATE STATISTICS columns/tables, SET values,
+  role options, extension/storage options, DROP DATABASE options, GRANT privileges,
+  and policy clauses. LT02 can then enforce the configured width instead of
+  flattening continuation lines to level zero.
+- Preserve indentation markers when flattening transparent bracket content, so
+  nested grammar scopes reach the indentation engine.
+- Apply required implicit-indent line collapse before other indentation fixes,
+  using original source anchors. This avoids unpositioned whitespace anchors and
+  conflicting fixes.
+- Align raw SQL using positions after earlier layout fixes, so explicit source
+  alignment and SELECT-target line breaks converge within one formatting call.
+- Honor `ignore_words` and `ignore_words_regex` for datatype capitalization
+  (CP05), matching the other capitalization rules.
+
+Regression cases cover parsing, expected formatting, and second-pass stability,
+including `implicit_indents = forbid`, `allow`, and `require`. Upstream already
+includes the earlier VARIADIC boundary fix and faster depth-map lookups; those
+implementations are reused here.
+
+Changes were developed with Codex assistance and remain the human contributor's
+responsibility to review and test.
 
 ## Quickstart
 

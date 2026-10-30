@@ -2964,6 +2964,7 @@ pub fn raw_dialect() -> Dialect {
             Ref::new("RoleReferenceSegment").to_matchable(),
             Sequence::new(vec![
                 Ref::keyword("WITH").optional().to_matchable(),
+                MetaSegment::implicit_indent().to_matchable(),
                 any_set_of(vec![
                     one_of(vec![
                         Ref::keyword("SUPERUSER").to_matchable(),
@@ -3057,6 +3058,7 @@ pub fn raw_dialect() -> Dialect {
                 ])
                 .config(|this| this.optional())
                 .to_matchable(),
+                MetaSegment::dedent().to_matchable(),
             ])
             .config(|this| this.optional())
             .to_matchable(),
@@ -3085,6 +3087,7 @@ pub fn raw_dialect() -> Dialect {
                         ])
                         .to_matchable(),
                         Ref::keyword("WITH").optional().to_matchable(),
+                        MetaSegment::implicit_indent().to_matchable(),
                         any_set_of(vec![
                             one_of(vec![
                                 Ref::keyword("SUPERUSER").to_matchable(),
@@ -3145,6 +3148,7 @@ pub fn raw_dialect() -> Dialect {
                             .to_matchable(),
                         ])
                         .to_matchable(),
+                        MetaSegment::dedent().to_matchable(),
                     ])
                     .to_matchable(),
                     // name only
@@ -3178,6 +3182,7 @@ pub fn raw_dialect() -> Dialect {
                         one_of(vec![
                             Sequence::new(vec![
                                 Ref::keyword("SET").to_matchable(),
+                                MetaSegment::implicit_indent().to_matchable(),
                                 Ref::new("ParameterNameSegment").to_matchable(),
                                 one_of(vec![
                                     Sequence::new(vec![
@@ -3206,6 +3211,7 @@ pub fn raw_dialect() -> Dialect {
                                     .to_matchable(),
                                 ])
                                 .to_matchable(),
+                                MetaSegment::dedent().to_matchable(),
                             ])
                             .to_matchable(),
                             Sequence::new(vec![
@@ -3506,7 +3512,9 @@ pub fn raw_dialect() -> Dialect {
                 one_of(vec![
                     Sequence::new(vec![
                         Ref::keyword("WITH").to_matchable(),
+                        MetaSegment::implicit_indent().to_matchable(),
                         Ref::new("RelationOptionsSegment").to_matchable(),
+                        MetaSegment::dedent().to_matchable(),
                     ])
                     .to_matchable(),
                     Sequence::new(vec![
@@ -4302,6 +4310,7 @@ pub fn raw_dialect() -> Dialect {
                     Ref::new("IfNotExistsGrammar").optional().to_matchable(),
                     Ref::new("ExtensionReferenceSegment").to_matchable(),
                     Ref::keyword("WITH").optional().to_matchable(),
+                    MetaSegment::implicit_indent().to_matchable(),
                     Sequence::new(vec![
                         Ref::keyword("SCHEMA").to_matchable(),
                         Ref::new("SchemaReferenceSegment").to_matchable(),
@@ -4321,6 +4330,7 @@ pub fn raw_dialect() -> Dialect {
                     .config(|this| this.optional())
                     .to_matchable(),
                     Ref::keyword("CASCADE").optional().to_matchable(),
+                    MetaSegment::dedent().to_matchable(),
                 ])
                 .to_matchable()
             })
@@ -4926,7 +4936,9 @@ pub fn raw_dialect() -> Dialect {
                     .to_matchable(),
                     Sequence::new(vec![
                         Ref::keyword("WITH").to_matchable(),
+                        MetaSegment::implicit_indent().to_matchable(),
                         Ref::new("RelationOptionsSegment").to_matchable(),
+                        MetaSegment::dedent().to_matchable(),
                     ])
                     .config(|this| this.optional())
                     .to_matchable(),
@@ -5301,7 +5313,9 @@ pub fn raw_dialect() -> Dialect {
                         .to_matchable(),
                     Sequence::new(vec![
                         Ref::keyword("WITH").to_matchable(),
+                        MetaSegment::implicit_indent().to_matchable(),
                         Ref::new("RelationOptionsSegment").to_matchable(),
+                        MetaSegment::dedent().to_matchable(),
                     ])
                     .config(|this| this.optional())
                     .to_matchable(),
@@ -5650,7 +5664,9 @@ pub fn raw_dialect() -> Dialect {
             Ref::new("DatabaseReferenceSegment").to_matchable(),
             Sequence::new(vec![
                 Ref::keyword("WITH").optional().to_matchable(),
+                MetaSegment::implicit_indent().to_matchable(),
                 Bracketed::new(vec![Ref::keyword("FORCE").to_matchable()]).to_matchable(),
+                MetaSegment::dedent().to_matchable(),
             ])
             .config(|this| this.optional())
             .to_matchable(),
@@ -6678,7 +6694,9 @@ pub fn raw_dialect() -> Dialect {
             .to_matchable(),
             Sequence::new(vec![
                 Ref::keyword("WITH").to_matchable(),
+                MetaSegment::implicit_indent().to_matchable(),
                 Ref::new("RelationOptionsSegment").to_matchable(),
+                MetaSegment::dedent().to_matchable(),
             ])
             .config(|this| this.optional())
             .to_matchable(),
@@ -6690,7 +6708,9 @@ pub fn raw_dialect() -> Dialect {
             .to_matchable(),
             Sequence::new(vec![
                 Ref::keyword("WHERE").to_matchable(),
+                MetaSegment::implicit_indent().to_matchable(),
                 Ref::new("ExpressionSegment").to_matchable(),
+                MetaSegment::dedent().to_matchable(),
             ])
             .config(|this| this.optional())
             .to_matchable(),
@@ -7857,6 +7877,7 @@ pub fn raw_dialect() -> Dialect {
         Sequence::new(vec![
             Ref::keyword("INSERT").to_matchable(),
             Ref::keyword("INTO").to_matchable(),
+            MetaSegment::implicit_indent().to_matchable(),
             Ref::new("TableReferenceSegment").to_matchable(),
             Ref::new("AsAliasExpressionSegment")
                 .optional()
@@ -7864,6 +7885,7 @@ pub fn raw_dialect() -> Dialect {
             Ref::new("BracketedColumnReferenceListGrammar")
                 .optional()
                 .to_matchable(),
+            MetaSegment::dedent().to_matchable(),
             Sequence::new(vec![
                 Ref::keyword("OVERRIDING").to_matchable(),
                 one_of(vec![
@@ -8081,6 +8103,7 @@ pub fn raw_dialect() -> Dialect {
                     ])
                     .config(|this| this.optional())
                     .to_matchable(),
+                    MetaSegment::implicit_indent().to_matchable(),
                     one_of(vec![
                         Sequence::new(vec![
                             Ref::new("ParameterNameSegment").to_matchable(),
@@ -8129,6 +8152,7 @@ pub fn raw_dialect() -> Dialect {
                         .to_matchable(),
                     ])
                     .to_matchable(),
+                    MetaSegment::dedent().to_matchable(),
                 ])
                 .to_matchable()
             })
@@ -8189,6 +8213,7 @@ pub fn raw_dialect() -> Dialect {
                     Ref::new("ObjectReferenceSegment").to_matchable(),
                     Ref::keyword("ON").to_matchable(),
                     Ref::new("TableReferenceSegment").to_matchable(),
+                    MetaSegment::implicit_indent().to_matchable(),
                     Sequence::new(vec![
                         Ref::keyword("AS").to_matchable(),
                         one_of(vec![
@@ -8235,11 +8260,14 @@ pub fn raw_dialect() -> Dialect {
                     ])
                     .config(|this| this.optional())
                     .to_matchable(),
+                    MetaSegment::dedent().to_matchable(),
                     Sequence::new(vec![
                         Ref::keyword("WITH").to_matchable(),
+                        MetaSegment::implicit_indent().to_matchable(),
                         Ref::keyword("CHECK").to_matchable(),
                         Bracketed::new(vec![Ref::new("ExpressionSegment").to_matchable()])
                             .to_matchable(),
+                        MetaSegment::dedent().to_matchable(),
                     ])
                     .config(|this| this.optional())
                     .to_matchable(),
@@ -9116,6 +9144,7 @@ pub fn raw_dialect() -> Dialect {
         "ValuesClauseSegment",
         Sequence::new(vec![
             Ref::keyword("VALUES").to_matchable(),
+            MetaSegment::implicit_indent().to_matchable(),
             Delimited::new(vec![
                 Bracketed::new(vec![
                     Delimited::new(vec![
@@ -9128,6 +9157,7 @@ pub fn raw_dialect() -> Dialect {
                 .to_matchable(),
             ])
             .to_matchable(),
+            MetaSegment::dedent().to_matchable(),
             Ref::new("AliasExpressionSegment").optional().to_matchable(),
             Ref::new("OrderByClauseSegment").optional().to_matchable(),
             Ref::new("LimitClauseSegment").optional().to_matchable(),
@@ -10080,13 +10110,17 @@ pub fn raw_dialect() -> Dialect {
                 .config(|this| this.optional())
                 .to_matchable(),
                 Ref::keyword("ON").to_matchable(),
+                MetaSegment::implicit_indent().to_matchable(),
                 Delimited::new(vec![
                     Ref::new("ColumnReferenceSegment").to_matchable(),
                     Ref::new("ExpressionSegment").to_matchable(),
                 ])
                 .to_matchable(),
+                MetaSegment::dedent().to_matchable(),
                 Ref::keyword("FROM").to_matchable(),
+                MetaSegment::implicit_indent().to_matchable(),
                 Ref::new("TableReferenceSegment").to_matchable(),
+                MetaSegment::dedent().to_matchable(),
             ])
             .to_matchable()
             .into(),

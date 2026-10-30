@@ -1042,7 +1042,9 @@ pub fn raw_dialect() -> Dialect {
                 Bracketed::new(vec![
                     Sequence::new(vec![
                         Ref::keyword("WHERE").to_matchable(),
+                        MetaSegment::implicit_indent().to_matchable(),
                         Ref::new("ExpressionSegment").to_matchable(),
+                        MetaSegment::dedent().to_matchable(),
                     ])
                     .to_matchable(),
                 ])
@@ -3475,9 +3477,14 @@ pub fn raw_dialect() -> Dialect {
         (
             "AccessPermissionsSegment".into(),
             NodeMatcher::new(SyntaxKind::AccessPermissions, |_| {
-                Delimited::new(vec![Ref::new("AccessPermissionSegment").to_matchable()])
-                    .config(|this| this.terminators = vec![Ref::keyword("ON").to_matchable()])
-                    .to_matchable()
+                Sequence::new(vec![
+                    MetaSegment::implicit_indent().to_matchable(),
+                    Delimited::new(vec![Ref::new("AccessPermissionSegment").to_matchable()])
+                        .config(|this| this.terminators = vec![Ref::keyword("ON").to_matchable()])
+                        .to_matchable(),
+                    MetaSegment::dedent().to_matchable(),
+                ])
+                .to_matchable()
             })
             .to_matchable()
             .into(),

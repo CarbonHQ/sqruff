@@ -2565,9 +2565,10 @@ test_fail_postgres_on_conflict_returning:
     SET
     bar = $2;
   fix_str: |
-    INSERT INTO foo (
-        id, bar
-    )
+    INSERT INTO
+        foo (
+            id, bar
+        )
     VALUES (
         $1, $2
     ) ON CONFLICT (id) DO UPDATE

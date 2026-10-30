@@ -345,7 +345,12 @@ fn determine_aligned_inline_spacing(
     }
 
     let use_source_positions = match coordinate_space {
-        Some(AlignmentCoordinateSpace::Source) => true,
+        // Raw SQL has no distinct source coordinate space. Use positions after
+        // earlier layout fixes (e.g. LT09 splitting SELECT targets), otherwise
+        // alignment only appears on a second formatting invocation.
+        Some(AlignmentCoordinateSpace::Source) => {
+            has_templated_content(&parent_segment, &siblings, next_seg)
+        }
         Some(AlignmentCoordinateSpace::Templated) => false,
         None => has_templated_content(&parent_segment, &siblings, next_seg),
     };

@@ -286,3 +286,17 @@ test_fail_postgres_alter_type:
   configs:
     core:
       dialect: postgres
+
+
+test_ignore_type_words_and_regex:
+  roundtrip: true
+  fail_str: |
+    create table t (a int, b varchar(20), c text);
+  fix_str: |
+    create table t (a int, b varchar(20), c TEXT);
+  configs:
+    rules:
+      capitalisation.types:
+        extended_capitalisation_policy: upper
+        ignore_words: [int]
+        ignore_words_regex: ["^var"]

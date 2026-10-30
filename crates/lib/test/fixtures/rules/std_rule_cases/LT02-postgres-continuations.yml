@@ -1,0 +1,730 @@
+rule: LT02
+test_postgres_continuation_filter_forbid:
+  roundtrip: true
+  fail_str: |
+    select
+      count(*) filter (
+        where
+        trim(name) != ''
+      )
+    from t;
+  fix_str: |
+    select
+      count(*) filter (
+        where
+          trim(name) != ''
+      )
+    from t;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_partial_index_forbid:
+  roundtrip: true
+  fail_str: |
+    create index example_idx on t (id)
+    where
+    (id is not null);
+  fix_str: |
+    create index example_idx on t (id)
+    where
+      (id is not null);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_session_set_forbid:
+  roundtrip: true
+  fail_str: |
+    set
+    search_path = app_public, postgis;
+  fix_str: |
+    set
+      search_path = app_public, postgis;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_create_role_forbid:
+  roundtrip: true
+  fail_str: |
+    create role example
+    with
+    login;
+  fix_str: |
+    create role example
+    with
+      login;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_alter_role_forbid:
+  roundtrip: true
+  fail_str: |
+    alter role example
+    with
+    login;
+  fix_str: |
+    alter role example
+    with
+      login;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_alter_role_set_forbid:
+  roundtrip: true
+  fail_str: |
+    alter role example
+    set
+    search_path = public;
+  fix_str: |
+    alter role example
+    set
+      search_path = public;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_extension_forbid:
+  roundtrip: true
+  fail_str: |
+    create extension if not exists pgcrypto
+    with
+    schema public;
+  fix_str: |
+    create extension if not exists pgcrypto
+    with
+      schema public;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_storage_options_forbid:
+  roundtrip: true
+  fail_str: |
+    create table example (id int)
+    with
+    (fillfactor = 70);
+  fix_str: |
+    create table example (id int)
+    with
+      (fillfactor = 70);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_statistics_forbid:
+  roundtrip: true
+  fail_str: |
+    create statistics example on id,
+    org_id
+    from
+    t;
+  fix_str: |
+    create statistics example on
+      id,
+      org_id
+    from
+      t;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_drop_database_forbid:
+  roundtrip: true
+  fail_str: |
+    drop database if exists example
+    with
+    (force);
+  fix_str: |
+    drop database if exists example
+    with
+      (force);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_grants_forbid:
+  roundtrip: true
+  fail_str: |
+    grant
+    select,
+    insert,
+    delete,
+    update on table t to example;
+  fix_str: |
+    grant
+      select,
+      insert,
+      delete,
+      update
+    on table t to example;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_policy_forbid:
+  roundtrip: true
+  fail_str: |
+    create policy p on t for
+    select
+    to example using (true)
+    with
+    check (true);
+  fix_str: |
+    create policy p on t
+      for
+      select
+      to example using (true)
+    with
+      check (true);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_insert_target_rows_forbid:
+  roundtrip: true
+  fail_str: |
+    insert into
+    app_public.validation_type (id, name)
+    values
+    (1, 'Duplicate'),
+    (2, 'Blank');
+  fix_str: |
+    insert into
+      app_public.validation_type (id, name)
+    values
+      (1, 'Duplicate'),
+      (2, 'Blank');
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+test_postgres_continuation_filter_allow:
+  roundtrip: true
+  fail_str: |
+    select
+      count(*) filter (
+        where
+        trim(name) != ''
+      )
+    from t;
+  fix_str: |
+    select
+      count(*) filter (
+        where
+          trim(name) != ''
+      )
+    from t;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_partial_index_allow:
+  roundtrip: true
+  fail_str: |
+    create index example_idx on t (id)
+    where
+    (id is not null);
+  fix_str: |
+    create index example_idx on t (id)
+    where
+      (id is not null);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_session_set_allow:
+  roundtrip: true
+  fail_str: |
+    set
+    search_path = app_public, postgis;
+  fix_str: |
+    set
+      search_path = app_public, postgis;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_create_role_allow:
+  roundtrip: true
+  fail_str: |
+    create role example
+    with
+    login;
+  fix_str: |
+    create role example
+    with
+      login;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_alter_role_allow:
+  roundtrip: true
+  fail_str: |
+    alter role example
+    with
+    login;
+  fix_str: |
+    alter role example
+    with
+      login;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_alter_role_set_allow:
+  roundtrip: true
+  fail_str: |
+    alter role example
+    set
+    search_path = public;
+  fix_str: |
+    alter role example
+    set
+      search_path = public;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_extension_allow:
+  roundtrip: true
+  fail_str: |
+    create extension if not exists pgcrypto
+    with
+    schema public;
+  fix_str: |
+    create extension if not exists pgcrypto
+    with
+      schema public;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_storage_options_allow:
+  roundtrip: true
+  fail_str: |
+    create table example (id int)
+    with
+    (fillfactor = 70);
+  fix_str: |
+    create table example (id int)
+    with
+      (fillfactor = 70);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_statistics_allow:
+  roundtrip: true
+  fail_str: |
+    create statistics example on id,
+    org_id
+    from
+    t;
+  fix_str: |
+    create statistics example on id,
+      org_id
+    from
+      t;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_drop_database_allow:
+  roundtrip: true
+  fail_str: |
+    drop database if exists example
+    with
+    (force);
+  fix_str: |
+    drop database if exists example
+    with
+      (force);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_grants_allow:
+  roundtrip: true
+  fail_str: |
+    grant
+    select,
+    insert,
+    delete,
+    update on table t to example;
+  fix_str: |
+    grant
+      select,
+      insert,
+      delete,
+      update
+    on table t to example;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_policy_allow:
+  roundtrip: true
+  fail_str: |
+    create policy p on t for
+    select
+    to example using (true)
+    with
+    check (true);
+  fix_str: |
+    create policy p on t for
+      select
+      to example using (true)
+    with
+      check (true);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_insert_target_rows_allow:
+  roundtrip: true
+  fail_str: |
+    insert into
+    app_public.validation_type (id, name)
+    values
+    (1, 'Duplicate'),
+    (2, 'Blank');
+  fix_str: |
+    insert into
+      app_public.validation_type (id, name)
+    values
+      (1, 'Duplicate'),
+      (2, 'Blank');
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+test_postgres_continuation_filter_require:
+  roundtrip: true
+  fail_str: |
+    select
+      count(*) filter (
+        where
+        trim(name) != ''
+      )
+    from t;
+  fix_str: |
+    select
+      count(*) filter (
+        where trim(name) != ''
+      )
+    from t;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+test_postgres_continuation_partial_index_require:
+  roundtrip: true
+  fail_str: |
+    create index example_idx on t (id)
+    where
+    (id is not null);
+  fix_str: |
+    create index example_idx on t (id)
+    where (id is not null);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+test_postgres_continuation_session_set_require:
+  roundtrip: true
+  fail_str: |
+    set
+    search_path = app_public, postgis;
+  fix_str: |
+    set search_path = app_public, postgis;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+test_postgres_continuation_create_role_require:
+  roundtrip: true
+  fail_str: |
+    create role example
+    with
+    login;
+  fix_str: |
+    create role example
+    with login;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+test_postgres_continuation_alter_role_require:
+  roundtrip: true
+  fail_str: |
+    alter role example
+    with
+    login;
+  fix_str: |
+    alter role example
+    with login;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+test_postgres_continuation_alter_role_set_require:
+  roundtrip: true
+  fail_str: |
+    alter role example
+    set
+    search_path = public;
+  fix_str: |
+    alter role example
+    set search_path = public;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+test_postgres_continuation_extension_require:
+  roundtrip: true
+  fail_str: |
+    create extension if not exists pgcrypto
+    with
+    schema public;
+  fix_str: |
+    create extension if not exists pgcrypto
+    with schema public;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+test_postgres_continuation_storage_options_require:
+  roundtrip: true
+  fail_str: |
+    create table example (id int)
+    with
+    (fillfactor = 70);
+  fix_str: |
+    create table example (id int)
+    with (fillfactor = 70);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+test_postgres_continuation_statistics_require:
+  roundtrip: true
+  fail_str: |
+    create statistics example on id,
+    org_id
+    from
+    t;
+  fix_str: |
+    create statistics example on id,
+      org_id
+    from t;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+test_postgres_continuation_drop_database_require:
+  roundtrip: true
+  fail_str: |
+    drop database if exists example
+    with
+    (force);
+  fix_str: |
+    drop database if exists example
+    with (force);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+test_postgres_continuation_grants_require:
+  roundtrip: true
+  fail_str: |
+    grant
+    select,
+    insert,
+    delete,
+    update on table t to example;
+  fix_str: |
+    grant select,
+      insert,
+      delete,
+      update
+    on table t to example;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+test_postgres_continuation_policy_require:
+  roundtrip: true
+  fail_str: |
+    create policy p on t for
+    select
+    to example using (true)
+    with
+    check (true);
+  fix_str: |
+    create policy p on t for
+      select
+      to example using (true)
+    with check (true);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+test_postgres_continuation_insert_target_rows_require:
+  roundtrip: true
+  fail_str: |
+    insert into
+    app_public.validation_type (id, name)
+    values
+    (1, 'Duplicate'),
+    (2, 'Blank');
+  fix_str: |
+    insert into app_public.validation_type (id, name)
+    values (1, 'Duplicate'),
+      (2, 'Blank');
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require
+
+test_postgres_bracketed_join_scopes_forbid:
+  roundtrip: true
+  fail_str: |
+    select * from (
+    foo
+    join bar on foo.id = bar.id
+    );
+  fix_str: |
+    select * from (
+      foo
+        join bar on foo.id = bar.id
+    );
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      indented_joins: true
+      implicit_indents: forbid
+
+test_postgres_bracketed_join_scopes_allow:
+  roundtrip: true
+  fail_str: |
+    select * from (
+    foo
+    join bar on foo.id = bar.id
+    );
+  fix_str: |
+    select * from (
+      foo
+        join bar on foo.id = bar.id
+    );
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      indented_joins: true
+      implicit_indents: allow
+
+test_postgres_bracketed_join_scopes_require:
+  roundtrip: true
+  fail_str: |
+    select * from (
+    foo
+    join bar on foo.id = bar.id
+    );
+  fix_str: |
+    select * from (
+      foo
+        join bar on foo.id = bar.id
+    );
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      indented_joins: true
+      implicit_indents: require

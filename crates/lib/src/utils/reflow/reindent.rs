@@ -737,38 +737,8 @@ fn crawl_indent_points(
                 IndentStats::from_combination(cached_indent_stats.clone(), elem.indent_impulse());
 
             if !indent_stats.implicit_indents.is_empty() {
-                let mut unclosed_bracket = false;
-
-                if implicit_indents != ImplicitIndents::Forbid
-                    && elements[idx + 1]
-                        .class_types()
-                        .contains(SyntaxKind::StartBracket)
-                {
-                    let depth = elements[idx + 1]
-                        .as_block()
-                        .unwrap()
-                        .depth_info()
-                        .stack_depth;
-
-                    let elems = &elements[idx + 1..];
-                    unclosed_bracket = elems.is_empty();
-
-                    for elem_j in elems {
-                        if let Some(elem_j) = elem_j.as_point() {
-                            if elem_j.num_newlines() > 0 {
-                                unclosed_bracket = true;
-                                break;
-                            }
-                        } else if elem_j.class_types().contains(SyntaxKind::EndBracket)
-                            && elem_j.as_block().unwrap().depth_info().stack_depth == depth
-                        {
-                            unclosed_bracket = false;
-                            break;
-                        } else {
-                            unclosed_bracket = true;
-                        }
-                    }
-                }
+                let unclosed_bracket = implicit_indents != ImplicitIndents::Forbid
+                    && implicit_indent_opens_multiline_bracket(elements, idx);
 
                 if unclosed_bracket || implicit_indents == ImplicitIndents::Forbid {
                     indent_stats.implicit_indents = Default::default();
@@ -871,6 +841,30 @@ fn crawl_indent_points(
     acc
 }
 
+fn implicit_indent_opens_multiline_bracket(elements: &ReflowSequenceType, idx: usize) -> bool {
+    let Some(block) = elements.get(idx + 1).and_then(ReflowElement::as_block) else {
+        return false;
+    };
+    if !block.class_types().contains(SyntaxKind::StartBracket) {
+        return false;
+    }
+    let depth = block.depth_info().stack_depth;
+    for element in &elements[idx + 1..] {
+        if element
+            .as_point()
+            .is_some_and(|point| point.num_newlines() > 0)
+        {
+            return true;
+        }
+        if element.class_types().contains(SyntaxKind::EndBracket)
+            && element.as_block().unwrap().depth_info().stack_depth == depth
+        {
+            return false;
+        }
+    }
+    true
+}
+
 fn map_line_buffers(
     elements: &ReflowSequenceType,
     implicit_indents: ImplicitIndents,
@@ -894,6 +888,9 @@ fn map_line_buffers(
         if implicit_indents == ImplicitIndents::Require
             && !indent_stats.implicit_indents.is_empty()
             && indent_point.is_line_break
+            && !implicit_indent_opens_multiline_bracket(elements, indent_point.idx)
+            // An explicit bracket indent at the same point owns this break.
+            && !elements[indent_point.idx].segments().iter().any(|segment| segment.is_type(SyntaxKind::Indent))
         {
             implicit_indent_locs.insert(indent_point.idx);
         }
@@ -1483,6 +1480,27 @@ pub fn lint_indent_points(
     let (mut lines, imbalanced_indent_locs, mut implicit_indent_locs) =
         map_line_buffers(&elements, implicit_indents);
 
+    if implicit_indents == ImplicitIndents::Require && !implicit_indent_locs.is_empty() {
+        implicit_indent_locs.retain(|idx| {
+            let Some(block) = elements.get(idx + 1).and_then(ReflowElement::as_block) else {
+                return true;
+            };
+
+            !block
+                .depth_info()
+                .stack_class_types
+                .iter()
+                .any(|class_types| exclusions.implicit_indents.intersects(class_types))
+        });
+
+        // Collapse against source segments before indenting. Indentation fixes can
+        // introduce unpositioned whitespace and conflict with this replacement.
+        let implicit_results = convert_newlines_to_spaces(tables, &elements, &implicit_indent_locs);
+        if !implicit_results.is_empty() {
+            return (elements, implicit_results);
+        }
+    }
+
     let mut results = Vec::new();
     let mut elem_buffer = elements.clone();
     let mut forced_indents = Vec::new();
@@ -1524,25 +1542,6 @@ pub fn lint_indent_points(
         );
 
         results.extend(line_results);
-    }
-
-    if implicit_indents == ImplicitIndents::Require && !implicit_indent_locs.is_empty() {
-        implicit_indent_locs.retain(|idx| {
-            let Some(block) = elem_buffer.get(idx + 1).and_then(ReflowElement::as_block) else {
-                return true;
-            };
-
-            !block
-                .depth_info()
-                .stack_class_types
-                .iter()
-                .any(|class_types| exclusions.implicit_indents.intersects(class_types))
-        });
-
-        let mut implicit_results =
-            convert_newlines_to_spaces(tables, &elem_buffer, &implicit_indent_locs);
-        implicit_results.extend(results);
-        results = implicit_results;
     }
 
     (elem_buffer, results)

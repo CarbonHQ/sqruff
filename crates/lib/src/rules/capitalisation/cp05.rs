@@ -1,4 +1,5 @@
 use hashbrown::HashMap;
+use regex::Regex;
 use sqruff_lib_core::dialects::syntax::{SyntaxKind, SyntaxSet};
 
 use super::cp01::handle_segment;
@@ -10,6 +11,8 @@ use crate::core::rules::{Erased, ErasedRule, LintResult, Rule, RuleGroups};
 #[derive(Debug, Default, Clone)]
 pub struct RuleCP05 {
     extended_capitalisation_policy: String,
+    ignore_words: Vec<String>,
+    ignore_words_regex: Vec<Regex>,
 }
 
 impl Rule for RuleCP05 {
@@ -19,6 +22,30 @@ impl Rule for RuleCP05 {
                 .as_string()
                 .unwrap()
                 .to_string(),
+            ignore_words: config["ignore_words"]
+                .map(|value| {
+                    value
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|word| word.as_string().unwrap().to_lowercase())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            ignore_words_regex: config["ignore_words_regex"]
+                .map(|value| {
+                    value
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|pattern| {
+                            Regex::new(pattern.as_string().unwrap())
+                                .map_err(|error| error.to_string())
+                        })
+                        .collect::<Result<_, _>>()
+                })
+                .transpose()?
+                .unwrap_or_default(),
         }
         .erased())
     }
@@ -78,6 +105,15 @@ CREATE TABLE t (
                     || seg.is_type(SyntaxKind::QuotedIdentifier)
                     || seg.is_type(SyntaxKind::QuotedLiteral)
                     || !seg.segments().is_empty()
+                {
+                    continue;
+                }
+
+                if self.ignore_words.contains(&seg.raw().to_lowercase())
+                    || self
+                        .ignore_words_regex
+                        .iter()
+                        .any(|pattern| pattern.is_match(seg.raw().as_ref()))
                 {
                     continue;
                 }
