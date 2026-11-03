@@ -140,7 +140,8 @@ test_fix_duckdb_named_parameter_case:
     SELECT
         CASE
             WHEN
-                $target == 'stream_id' THEN stream_id
+                $target == 'stream_id'
+                THEN stream_id
             WHEN $target == 'name' THEN name
         END AS mapping
     FROM

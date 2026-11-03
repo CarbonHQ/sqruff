@@ -1338,53 +1338,58 @@ file:
         - data_type:
           - keyword: INTEGER
         - column_constraint_segment:
-          - keyword: REFERENCES
-          - table_reference:
-            - naked_identifier: groups
-          - referenced_column_list:
-            - bracketed:
-              - start_bracket: (
-              - column_reference:
-                - naked_identifier: group_id
-              - end_bracket: )
-          - keyword: ON
-          - keyword: DELETE
-          - keyword: CASCADE
+          - reference_definition:
+            - keyword: REFERENCES
+            - table_reference:
+              - naked_identifier: groups
+            - referenced_column_list:
+              - bracketed:
+                - start_bracket: (
+                - column_reference:
+                  - naked_identifier: group_id
+                - end_bracket: )
+            - referential_action_clause:
+              - keyword: ON
+              - keyword: DELETE
+              - keyword: CASCADE
       - comma: ','
       - column_definition:
         - naked_identifier: domain_id
         - data_type:
           - keyword: INTEGER
         - column_constraint_segment:
-          - keyword: REFERENCES
-          - table_reference:
-            - naked_identifier: groups
-          - referenced_column_list:
-            - bracketed:
-              - start_bracket: (
-              - column_reference:
-                - naked_identifier: group_id
-              - end_bracket: )
-          - keyword: ON
-          - keyword: UPDATE
-          - keyword: RESTRICT
+          - reference_definition:
+            - keyword: REFERENCES
+            - table_reference:
+              - naked_identifier: groups
+            - referenced_column_list:
+              - bracketed:
+                - start_bracket: (
+                - column_reference:
+                  - naked_identifier: group_id
+                - end_bracket: )
+            - referential_action_clause:
+              - keyword: ON
+              - keyword: UPDATE
+              - keyword: RESTRICT
       - comma: ','
       - column_definition:
         - naked_identifier: other_id
         - data_type:
           - keyword: INTEGER
         - column_constraint_segment:
-          - keyword: REFERENCES
-          - table_reference:
-            - naked_identifier: groups
-          - referenced_column_list:
-            - bracketed:
-              - start_bracket: (
-              - column_reference:
-                - naked_identifier: group_id
-              - end_bracket: )
-          - keyword: MATCH
-          - keyword: SIMPLE
+          - reference_definition:
+            - keyword: REFERENCES
+            - table_reference:
+              - naked_identifier: groups
+            - referenced_column_list:
+              - bracketed:
+                - start_bracket: (
+                - column_reference:
+                  - naked_identifier: group_id
+                - end_bracket: )
+            - keyword: MATCH
+            - keyword: SIMPLE
       - end_bracket: )
 - statement_terminator: ;
 - statement:
@@ -2353,27 +2358,29 @@ file:
           - column_reference:
             - naked_identifier: col2
           - end_bracket: )
-        - keyword: REFERENCES
-        - table_reference:
-          - naked_identifier: table1
-        - referenced_column_list:
-          - bracketed:
-            - start_bracket: (
-            - column_reference:
-              - naked_identifier: col1
-            - comma: ','
-            - column_reference:
-              - naked_identifier: col2
-            - end_bracket: )
-        - keyword: ON
-        - keyword: DELETE
-        - keyword: SET
-        - keyword: 'NULL'
-        - bracketed:
-          - start_bracket: (
-          - column_reference:
-            - naked_identifier: col1
-          - end_bracket: )
+        - reference_definition:
+          - keyword: REFERENCES
+          - table_reference:
+            - naked_identifier: table1
+          - referenced_column_list:
+            - bracketed:
+              - start_bracket: (
+              - column_reference:
+                - naked_identifier: col1
+              - comma: ','
+              - column_reference:
+                - naked_identifier: col2
+              - end_bracket: )
+          - referential_action_clause:
+            - keyword: ON
+            - keyword: DELETE
+            - keyword: SET
+            - keyword: 'NULL'
+            - bracketed:
+              - start_bracket: (
+              - column_reference:
+                - naked_identifier: col1
+              - end_bracket: )
       - end_bracket: )
 - statement_terminator: ;
 - statement:
@@ -2416,27 +2423,29 @@ file:
           - column_reference:
             - naked_identifier: col2
           - end_bracket: )
-        - keyword: REFERENCES
-        - table_reference:
-          - naked_identifier: table1
-        - referenced_column_list:
-          - bracketed:
-            - start_bracket: (
-            - column_reference:
-              - naked_identifier: col1
-            - comma: ','
-            - column_reference:
-              - naked_identifier: col2
-            - end_bracket: )
-        - keyword: ON
-        - keyword: DELETE
-        - keyword: SET
-        - keyword: DEFAULT
-        - bracketed:
-          - start_bracket: (
-          - column_reference:
-            - naked_identifier: col1
-          - end_bracket: )
+        - reference_definition:
+          - keyword: REFERENCES
+          - table_reference:
+            - naked_identifier: table1
+          - referenced_column_list:
+            - bracketed:
+              - start_bracket: (
+              - column_reference:
+                - naked_identifier: col1
+              - comma: ','
+              - column_reference:
+                - naked_identifier: col2
+              - end_bracket: )
+          - referential_action_clause:
+            - keyword: ON
+            - keyword: DELETE
+            - keyword: SET
+            - keyword: DEFAULT
+            - bracketed:
+              - start_bracket: (
+              - column_reference:
+                - naked_identifier: col1
+              - end_bracket: )
       - end_bracket: )
 - statement_terminator: ;
 - statement:

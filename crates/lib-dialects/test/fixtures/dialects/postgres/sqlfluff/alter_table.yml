@@ -807,15 +807,16 @@ file:
           - column_reference:
             - naked_identifier: address
           - end_bracket: )
-        - keyword: REFERENCES
-        - table_reference:
-          - naked_identifier: addresses
-        - referenced_column_list:
-          - bracketed:
-            - start_bracket: (
-            - column_reference:
-              - naked_identifier: address
-            - end_bracket: )
+        - reference_definition:
+          - keyword: REFERENCES
+          - table_reference:
+            - naked_identifier: addresses
+          - referenced_column_list:
+            - bracketed:
+              - start_bracket: (
+              - column_reference:
+                - naked_identifier: address
+              - end_bracket: )
 - statement_terminator: ;
 - statement:
   - alter_table_statement:
@@ -836,17 +837,18 @@ file:
           - column_reference:
             - naked_identifier: address
           - end_bracket: )
-        - keyword: REFERENCES
-        - table_reference:
-          - naked_identifier: addresses
-        - referenced_column_list:
-          - bracketed:
-            - start_bracket: (
-            - column_reference:
-              - naked_identifier: address
-            - end_bracket: )
-        - keyword: MATCH
-        - keyword: FULL
+        - reference_definition:
+          - keyword: REFERENCES
+          - table_reference:
+            - naked_identifier: addresses
+          - referenced_column_list:
+            - bracketed:
+              - start_bracket: (
+              - column_reference:
+                - naked_identifier: address
+              - end_bracket: )
+          - keyword: MATCH
+          - keyword: FULL
 - statement_terminator: ;
 - statement:
   - alter_table_statement:
@@ -867,21 +869,24 @@ file:
           - column_reference:
             - naked_identifier: address
           - end_bracket: )
-        - keyword: REFERENCES
-        - table_reference:
-          - naked_identifier: addresses
-        - referenced_column_list:
-          - bracketed:
-            - start_bracket: (
-            - column_reference:
-              - naked_identifier: address
-            - end_bracket: )
-        - keyword: ON
-        - keyword: DELETE
-        - keyword: RESTRICT
-        - keyword: ON
-        - keyword: UPDATE
-        - keyword: CASCADE
+        - reference_definition:
+          - keyword: REFERENCES
+          - table_reference:
+            - naked_identifier: addresses
+          - referenced_column_list:
+            - bracketed:
+              - start_bracket: (
+              - column_reference:
+                - naked_identifier: address
+              - end_bracket: )
+          - referential_action_clause:
+            - keyword: ON
+            - keyword: DELETE
+            - keyword: RESTRICT
+          - referential_action_clause:
+            - keyword: ON
+            - keyword: UPDATE
+            - keyword: CASCADE
 - statement_terminator: ;
 - statement:
   - alter_table_statement:
@@ -902,15 +907,16 @@ file:
           - column_reference:
             - naked_identifier: address
           - end_bracket: )
-        - keyword: REFERENCES
-        - table_reference:
-          - naked_identifier: addresses
-        - referenced_column_list:
-          - bracketed:
-            - start_bracket: (
-            - column_reference:
-              - naked_identifier: address
-            - end_bracket: )
+        - reference_definition:
+          - keyword: REFERENCES
+          - table_reference:
+            - naked_identifier: addresses
+          - referenced_column_list:
+            - bracketed:
+              - start_bracket: (
+              - column_reference:
+                - naked_identifier: address
+              - end_bracket: )
         - keyword: NOT
         - keyword: VALID
 - statement_terminator: ;
@@ -1197,17 +1203,18 @@ file:
           - column_reference:
             - naked_identifier: workorderid
           - end_bracket: )
-        - keyword: REFERENCES
-        - table_reference:
-          - naked_identifier: landing
-          - dot: .
-          - naked_identifier: workorder
-        - referenced_column_list:
-          - bracketed:
-            - start_bracket: (
-            - column_reference:
-              - naked_identifier: id
-            - end_bracket: )
+        - reference_definition:
+          - keyword: REFERENCES
+          - table_reference:
+            - naked_identifier: landing
+            - dot: .
+            - naked_identifier: workorder
+          - referenced_column_list:
+            - bracketed:
+              - start_bracket: (
+              - column_reference:
+                - naked_identifier: id
+              - end_bracket: )
 - statement_terminator: ;
 - statement:
   - alter_table_statement:

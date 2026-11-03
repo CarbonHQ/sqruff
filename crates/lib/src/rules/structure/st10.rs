@@ -149,7 +149,7 @@ WHERE my_table.col > 3
 }
 
 fn is_whitespace_or_newline(seg: &ErasedSegment) -> bool {
-    matches!(seg.get_type(), SyntaxKind::Whitespace | SyntaxKind::Newline)
+    seg.is_meta() || matches!(seg.get_type(), SyntaxKind::Whitespace | SyntaxKind::Newline)
 }
 
 fn is_non_boolean_binary_operator(seg: &ErasedSegment) -> bool {

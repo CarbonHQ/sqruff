@@ -441,15 +441,16 @@ file:
           - column_reference:
             - naked_identifier: t1_id
           - end_bracket: )
-        - keyword: REFERENCES
-        - table_reference:
-          - naked_identifier: t1
-        - referenced_column_list:
-          - bracketed:
-            - start_bracket: (
-            - column_reference:
-              - naked_identifier: id
-            - end_bracket: )
+        - reference_definition:
+          - keyword: REFERENCES
+          - table_reference:
+            - naked_identifier: t1
+          - referenced_column_list:
+            - bracketed:
+              - start_bracket: (
+              - column_reference:
+                - naked_identifier: id
+              - end_bracket: )
       - end_bracket: )
 - statement_terminator: ;
 - statement:
@@ -520,18 +521,19 @@ file:
           - column_reference:
             - naked_identifier: t3_j
           - end_bracket: )
-        - keyword: REFERENCES
-        - table_reference:
-          - naked_identifier: t3
-        - referenced_column_list:
-          - bracketed:
-            - start_bracket: (
-            - column_reference:
-              - naked_identifier: id
-            - comma: ','
-            - column_reference:
-              - naked_identifier: j
-            - end_bracket: )
+        - reference_definition:
+          - keyword: REFERENCES
+          - table_reference:
+            - naked_identifier: t3
+          - referenced_column_list:
+            - bracketed:
+              - start_bracket: (
+              - column_reference:
+                - naked_identifier: id
+              - comma: ','
+              - column_reference:
+                - naked_identifier: j
+              - end_bracket: )
       - end_bracket: )
 - statement_terminator: ;
 - statement:
@@ -584,15 +586,16 @@ file:
           - column_reference:
             - naked_identifier: t5_id
           - end_bracket: )
-        - keyword: REFERENCES
-        - table_reference:
-          - naked_identifier: t5
-        - referenced_column_list:
-          - bracketed:
-            - start_bracket: (
-            - column_reference:
-              - naked_identifier: id
-            - end_bracket: )
+        - reference_definition:
+          - keyword: REFERENCES
+          - table_reference:
+            - naked_identifier: t5
+          - referenced_column_list:
+            - bracketed:
+              - start_bracket: (
+              - column_reference:
+                - naked_identifier: id
+              - end_bracket: )
       - end_bracket: )
 - statement_terminator: ;
 - statement:

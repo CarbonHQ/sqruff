@@ -1,0 +1,21 @@
+rule: LT05
+# LT05 chooses the wrap; LT02 owns the final function-clause indentation.
+
+test_wrap_function_body_after_long_setting:
+  roundtrip: true
+  fail_str: |
+    create function f() returns int language sql
+    set
+      search_path = schema_with_a_long_name as $$select 1$$;
+  fix_str: |
+    create function f() returns int language sql
+    set
+      search_path = schema_with_a_long_name
+      as $$select 1$$;
+  configs:
+    core:
+      dialect: postgres
+      max_line_length: 48
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow

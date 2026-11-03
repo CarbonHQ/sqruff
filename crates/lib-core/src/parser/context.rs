@@ -1,3 +1,4 @@
+// Modified for Oxfmt: cache match ranges with their index in the input slice.
 use hashbrown::HashMap;
 use smol_str::SmolStr;
 
@@ -11,7 +12,7 @@ use crate::parser::IndentationConfig;
 use crate::parser::Parser;
 
 type LocKey = u32;
-type LocKeyData = (SmolStr, (usize, usize), SyntaxKind, u32);
+type LocKeyData = (SmolStr, (usize, usize), SyntaxKind, u32, u32);
 
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub struct CacheKey {

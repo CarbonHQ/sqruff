@@ -9,6 +9,7 @@ use sqruff_lib_core::lint_fix::LintFix;
 use sqruff_lib_core::parser::segments::{BlockType, ErasedSegment, SegmentBuilder, Tables};
 use strum_macros::EnumString;
 
+use super::config::ReflowConfig;
 use super::elements::{ReflowBlock, ReflowElement, ReflowPoint, ReflowSequenceType};
 use super::helpers::fixes_from_results;
 use super::rebreak::{LinePosition, RebreakSpan, identify_rebreak_spans};
@@ -737,38 +738,8 @@ fn crawl_indent_points(
                 IndentStats::from_combination(cached_indent_stats.clone(), elem.indent_impulse());
 
             if !indent_stats.implicit_indents.is_empty() {
-                let mut unclosed_bracket = false;
-
-                if implicit_indents != ImplicitIndents::Forbid
-                    && elements[idx + 1]
-                        .class_types()
-                        .contains(SyntaxKind::StartBracket)
-                {
-                    let depth = elements[idx + 1]
-                        .as_block()
-                        .unwrap()
-                        .depth_info()
-                        .stack_depth;
-
-                    let elems = &elements[idx + 1..];
-                    unclosed_bracket = elems.is_empty();
-
-                    for elem_j in elems {
-                        if let Some(elem_j) = elem_j.as_point() {
-                            if elem_j.num_newlines() > 0 {
-                                unclosed_bracket = true;
-                                break;
-                            }
-                        } else if elem_j.class_types().contains(SyntaxKind::EndBracket)
-                            && elem_j.as_block().unwrap().depth_info().stack_depth == depth
-                        {
-                            unclosed_bracket = false;
-                            break;
-                        } else {
-                            unclosed_bracket = true;
-                        }
-                    }
-                }
+                let unclosed_bracket = implicit_indents != ImplicitIndents::Forbid
+                    && implicit_indent_opens_multiline_bracket(elements, idx);
 
                 if unclosed_bracket || implicit_indents == ImplicitIndents::Forbid {
                     indent_stats.implicit_indents = Default::default();
@@ -871,6 +842,75 @@ fn crawl_indent_points(
     acc
 }
 
+fn implicit_indent_opens_multiline_bracket(elements: &ReflowSequenceType, idx: usize) -> bool {
+    const COMPARISON_OPERATORS: SyntaxSet = SyntaxSet::new(&[
+        SyntaxKind::RawComparisonOperator,
+        SyntaxKind::ComparisonOperator,
+        SyntaxKind::KeywordComparisonOperator,
+    ]);
+    let mut bracket_idx = idx + 1;
+    // A comparison's continuation indent starts before its operator. When
+    // the operator and opening bracket share a line, the bracket still owns
+    // the indentation of its contents, just as it does after WHERE.
+    while let Some(element) = elements.get(bracket_idx) {
+        if element.class_types().intersects(&COMPARISON_OPERATORS)
+            || element.as_block().is_some_and(|block| {
+                block
+                    .depth_info()
+                    .stack_class_types
+                    .iter()
+                    .any(|types| types.intersects(&COMPARISON_OPERATORS))
+            })
+            // WITH CHECK shares a policy head. If CHECK and its opening
+            // bracket stay on this line, the brackets own the content scope.
+            || element.as_block().is_some_and(|block| {
+                block.class_types().contains(SyntaxKind::Keyword)
+                    && block.segment().raw().eq_ignore_ascii_case("CHECK")
+                    && block.depth_info().stack_class_types.iter().any(|types| {
+                        types.contains(SyntaxKind::CreatePolicyStatement)
+                            || types.contains(SyntaxKind::AlterPolicyStatement)
+                    })
+            })
+            || element
+                .segments()
+                .iter()
+                .any(|segment| segment.is_comment())
+        {
+            bracket_idx += 2;
+        } else {
+            break;
+        }
+    }
+    let Some(block) = elements.get(bracket_idx).and_then(ReflowElement::as_block) else {
+        return false;
+    };
+    if elements[idx + 1..bracket_idx].iter().any(|element| {
+        element
+            .as_point()
+            .is_some_and(|point| point.num_newlines() > 0)
+    }) {
+        return false;
+    }
+    if !block.class_types().contains(SyntaxKind::StartBracket) {
+        return false;
+    }
+    let depth = block.depth_info().stack_depth;
+    for element in &elements[bracket_idx..] {
+        if element
+            .as_point()
+            .is_some_and(|point| point.num_newlines() > 0)
+        {
+            return true;
+        }
+        if element.class_types().contains(SyntaxKind::EndBracket)
+            && element.as_block().unwrap().depth_info().stack_depth == depth
+        {
+            return false;
+        }
+    }
+    true
+}
+
 fn map_line_buffers(
     elements: &ReflowSequenceType,
     implicit_indents: ImplicitIndents,
@@ -894,6 +934,9 @@ fn map_line_buffers(
         if implicit_indents == ImplicitIndents::Require
             && !indent_stats.implicit_indents.is_empty()
             && indent_point.is_line_break
+            && !implicit_indent_opens_multiline_bracket(elements, indent_point.idx)
+            // An explicit bracket indent at the same point owns this break.
+            && !elements[indent_point.idx].segments().iter().any(|segment| segment.is_type(SyntaxKind::Indent))
         {
             implicit_indent_locs.insert(indent_point.idx);
         }
@@ -1333,6 +1376,25 @@ fn lint_line_untaken_negative_indents(
             continue;
         }
 
+        // A function's AS body may share the last SET value's line. Closing
+        // that setting's scope must not impose a new function-body style;
+        // LT05 can still break the line when its printed width requires it.
+        if elements
+            .get(ip.idx + 1)
+            .and_then(ReflowElement::as_block)
+            .is_some_and(|block| {
+                block.class_types().contains(SyntaxKind::Keyword)
+                    && block.segment().raw().eq_ignore_ascii_case("AS")
+                    && block
+                        .depth_info()
+                        .stack_class_types
+                        .last()
+                        .is_some_and(|types| types.contains(SyntaxKind::FunctionDefinition))
+            })
+        {
+            continue;
+        }
+
         // Template blocks can sit in unusual places in the parse tree. Do not
         // introduce a forced line break immediately before one.
         if elements.get(ip.idx + 1).is_some_and(|element| {
@@ -1483,6 +1545,27 @@ pub fn lint_indent_points(
     let (mut lines, imbalanced_indent_locs, mut implicit_indent_locs) =
         map_line_buffers(&elements, implicit_indents);
 
+    if implicit_indents == ImplicitIndents::Require && !implicit_indent_locs.is_empty() {
+        implicit_indent_locs.retain(|idx| {
+            let Some(block) = elements.get(idx + 1).and_then(ReflowElement::as_block) else {
+                return true;
+            };
+
+            !block
+                .depth_info()
+                .stack_class_types
+                .iter()
+                .any(|class_types| exclusions.implicit_indents.intersects(class_types))
+        });
+
+        // Collapse against source segments before indenting. Indentation fixes can
+        // introduce unpositioned whitespace and conflict with this replacement.
+        let implicit_results = convert_newlines_to_spaces(tables, &elements, &implicit_indent_locs);
+        if !implicit_results.is_empty() {
+            return (elements, implicit_results);
+        }
+    }
+
     let mut results = Vec::new();
     let mut elem_buffer = elements.clone();
     let mut forced_indents = Vec::new();
@@ -1526,25 +1609,6 @@ pub fn lint_indent_points(
         results.extend(line_results);
     }
 
-    if implicit_indents == ImplicitIndents::Require && !implicit_indent_locs.is_empty() {
-        implicit_indent_locs.retain(|idx| {
-            let Some(block) = elem_buffer.get(idx + 1).and_then(ReflowElement::as_block) else {
-                return true;
-            };
-
-            !block
-                .depth_info()
-                .stack_class_types
-                .iter()
-                .any(|class_types| exclusions.implicit_indents.intersects(class_types))
-        });
-
-        let mut implicit_results =
-            convert_newlines_to_spaces(tables, &elem_buffer, &implicit_indent_locs);
-        implicit_results.extend(results);
-        results = implicit_results;
-    }
-
     (elem_buffer, results)
 }
 
@@ -1571,8 +1635,11 @@ fn calculate_indent_compensation(
     compensation
 }
 
-fn source_char_len(elements: &[ReflowElement]) -> usize {
-    let mut char_len = 0;
+fn source_char_len(
+    elements: &[ReflowElement],
+    layout: &sqruff_lib_core::parser::segments::LayoutContext,
+) -> usize {
+    let mut rendered = String::new();
     let mut last_source_slice = None;
 
     for seg in elements.iter().flat_map(|elem| elem.segments()) {
@@ -1588,7 +1655,7 @@ fn source_char_len(elements: &[ReflowElement]) -> usize {
         let source_str = pos_marker.source_str();
 
         if let Some(pos) = source_str.find('\n') {
-            char_len += pos;
+            rendered.push_str(&source_str[..pos]);
             break;
         }
 
@@ -1596,20 +1663,20 @@ fn source_char_len(elements: &[ReflowElement]) -> usize {
 
         if Some(source_slice.clone()) != last_source_slice {
             if !seg.raw().is_empty() && slice_len == 0 {
-                char_len += seg.raw().chars().count();
+                rendered.push_str(layout.rendered(seg.raw()));
             } else if slice_len == 0 {
                 continue;
             } else if pos_marker.is_literal() {
-                char_len += seg.raw().chars().count();
+                rendered.push_str(layout.rendered(seg.raw()));
                 last_source_slice = Some(source_slice);
             } else {
-                char_len += source_slice.end - source_slice.start;
+                rendered.push_str(source_str.as_ref());
                 last_source_slice = Some(source_slice);
             }
         }
     }
 
-    char_len
+    layout.width(&rendered)
 }
 
 /// Wraps an index like Python does: negative indices wrap from the end.
@@ -1654,7 +1721,9 @@ fn rebreak_priorities(spans: Vec<RebreakSpan>, buffer_len: usize) -> HashMap<usi
             priority = 3;
         } else if span_raw == "AND" {
             priority = 4;
-        } else if span.target.is_type(SyntaxKind::ComparisonOperator) {
+        } else if span.target.is_type(SyntaxKind::ComparisonOperator)
+            || span.target.is_type(SyntaxKind::KeywordComparisonOperator)
+        {
             priority = 5;
         } else if ["*", "/", "%"].contains(&span_raw.as_str()) {
             priority = 7;
@@ -1757,15 +1826,33 @@ fn match_indents(
             continue;
         };
 
-        let balance = FloatTypeWrapper::new(balance as f64 + 0.5 + (priority as f64 / 100.0));
+        // A comparison's own continuation indent does not make the operator
+        // bind more tightly than arithmetic in the surrounding expression.
+        let operator_balance = if priority == 5 {
+            balance - indent_stats.implicit_indents.len() as isize
+        } else {
+            balance
+        };
+        let balance =
+            FloatTypeWrapper::new(operator_balance as f64 + 0.5 + (priority as f64 / 100.0));
         matched_indents.entry(balance).or_default().push(e_idx);
     }
 
-    matched_indents.retain(|_key, value| value != &[newline_idx]);
+    // A compound dedent can contribute the same end-of-line point more than
+    // once. None of those entries is a useful place to shorten this line.
+    matched_indents.retain(|_key, value| {
+        value.retain(|&index| index != newline_idx);
+        !value.is_empty()
+    });
 
     if implicit_indents != ImplicitIndents::Forbid {
         let keys: Vec<_> = matched_indents.keys().copied().collect();
         for indent_level in keys {
+            // Fractional levels are operator/comma break opportunities. An
+            // implicit indent at the same point must not hide those breaks.
+            if indent_level.into_f64().fract() != 0.0 {
+                continue;
+            }
             let major_points: HashSet<_> = matched_indents[&indent_level]
                 .iter()
                 .copied()
@@ -1943,6 +2030,35 @@ fn fix_long_line_with_fractional_targets(
     line_results
 }
 
+// Working positions refer to placeholder identifiers, not the text an embedding
+// host prints. Re-measure the current line for every candidate break as well.
+pub(crate) fn rendered_column(
+    elements: &[ReflowElement],
+    layout: &sqruff_lib_core::parser::segments::LayoutContext,
+) -> usize {
+    // Candidates are ordered within a line. Avoid rescanning the entire file
+    // for every candidate in a large schema.
+    let start = elements
+        .iter()
+        .rposition(|element| element.class_types().contains(SyntaxKind::Newline))
+        .unwrap_or(0);
+    let mut line = String::new();
+    for segment in elements[start..]
+        .iter()
+        .flat_map(|element| element.segments())
+    {
+        let rendered = layout.rendered(segment.raw());
+        if rendered.contains(['\r', '\n']) {
+            let tail = rendered.rsplit(['\r', '\n']).next().unwrap();
+            line.clear();
+            line.push_str(tail);
+        } else {
+            line.push_str(rendered);
+        }
+    }
+    layout.base_indent + layout.width(&line)
+}
+
 fn fix_long_line_with_integer_targets(
     tables: &Tables,
     elements: &mut [ReflowElement],
@@ -1955,11 +2071,11 @@ fn fix_long_line_with_integer_targets(
 
     let mut purge_before = 0;
     for &e_idx in &target_breaks {
-        let Some(pos_marker) = elements[e_idx + 1].segments()[0].get_position_marker() else {
+        let Some(_) = elements[e_idx + 1].segments()[0].get_position_marker() else {
             break;
         };
 
-        if pos_marker.working_line_pos > line_length_limit {
+        if rendered_column(&elements[..=e_idx], &tables.layout) > line_length_limit {
             break;
         }
 
@@ -2027,6 +2143,141 @@ fn is_templated_safe_break(elements: &[ReflowElement], e_idx: usize) -> bool {
     before_literal || after_literal
 }
 
+/// Attach a relation alias to the preceding expression when the resulting
+/// line fits. Apply these whitespace fixes before choosing new wrap points so
+/// every fix keeps its original source anchor.
+pub(crate) fn coalesce_relation_aliases(
+    tables: &Tables,
+    elements: &ReflowSequenceType,
+    root_segment: &ErasedSegment,
+    config: &ReflowConfig,
+) -> Option<(ReflowSequenceType, Vec<LintResult>)> {
+    if config.max_line_length == 0
+        || config
+            .line_position_for(SyntaxKind::AliasExpression)
+            .is_some_and(|position| {
+                position.is_strict() || position.position() == LinePosition::Alone
+            })
+    {
+        return None;
+    }
+    let mut updated: Option<ReflowSequenceType> = None;
+    let mut results = Vec::new();
+    for idx in 1..elements.len().saturating_sub(1) {
+        let current = updated.as_ref().unwrap_or(elements);
+        let Some(point) = current[idx].as_point().filter(|p| p.num_newlines() > 0) else {
+            continue;
+        };
+        let (Some(before), Some(after)) =
+            (current[idx - 1].as_block(), current[idx + 1].as_block())
+        else {
+            continue;
+        };
+        let depth = after.depth_info();
+        let Some(alias_depth) = depth
+            .stack_class_types
+            .iter()
+            .rposition(|types| types.contains(SyntaxKind::AliasExpression))
+        else {
+            continue;
+        };
+        if alias_depth == 0 {
+            continue;
+        }
+        let is_relation = depth.stack_class_types[alias_depth - 1]
+            .contains(SyntaxKind::FromExpressionElement)
+            || before.depth_info().stack_class_types.iter().any(|types| {
+                types.intersects(const {
+                    &SyntaxSet::new(&[SyntaxKind::TableReference, SyntaxKind::TableExpression])
+                })
+            });
+        if !is_relation {
+            continue;
+        }
+        let alias = depth.stack_hashes[alias_depth];
+        if before.segment().is_comment()
+            || before.depth_info().stack_hash_set.contains(&alias)
+            || !before
+                .depth_info()
+                .stack_hash_set
+                .contains(&depth.stack_hashes[alias_depth - 1])
+            || current[idx].segments().iter().any(|segment| {
+                !segment.is_whitespace() && !segment.is_indent()
+                    || segment.is_whitespace()
+                        && segment
+                            .get_position_marker()
+                            .is_none_or(|marker| !marker.is_literal())
+            })
+        {
+            continue;
+        }
+        let mut end = idx + 1;
+        while current
+            .get(end + 2)
+            .and_then(ReflowElement::as_block)
+            .is_some_and(|block| block.depth_info().stack_hash_set.contains(&alias))
+        {
+            end += 2;
+        }
+        if current[idx + 1..=end]
+            .iter()
+            .flat_map(ReflowElement::segments)
+            .any(|segment| {
+                segment.is_comment() || tables.layout.rendered(segment.raw()).contains(['\r', '\n'])
+            })
+        {
+            continue;
+        }
+        // Preserve comments and line directives attached to the alias line.
+        if current[end + 1..]
+            .iter()
+            .take_while(|element| !element.as_point().is_some_and(|p| p.num_newlines() > 0))
+            .any(|element| {
+                element
+                    .segments()
+                    .iter()
+                    .any(|segment| segment.is_comment())
+            })
+        {
+            continue;
+        }
+        let (fixes, joined) = point.respace_point(
+            tables,
+            Some(before),
+            Some(after),
+            root_segment,
+            Vec::new(),
+            true,
+            "before",
+            config.indent_unit,
+            config.tab_space_size,
+        );
+        if fixes.is_empty() || joined.num_newlines() > 0 {
+            continue;
+        }
+        // Include punctuation and any following clause on the alias line.
+        // Checking just the name pair can otherwise repeatedly join a line
+        // which the wrapping pass immediately has to split again.
+        let mut tail = String::new();
+        for segment in current[idx + 1..].iter().flat_map(ReflowElement::segments) {
+            let rendered = tables.layout.rendered(segment.raw());
+            if let Some(newline) = rendered.find(['\r', '\n']) {
+                tail.push_str(&rendered[..newline]);
+                break;
+            }
+            tail.push_str(rendered);
+        }
+        let width = rendered_column(&current[..idx], &tables.layout)
+            + tables.layout.width(&joined.raw())
+            + tables.layout.width(&tail);
+        if width <= config.max_line_length {
+            updated.get_or_insert_with(|| elements.clone())[idx] = joined.into();
+            results.extend(fixes);
+        }
+    }
+    updated.map(|elements| (elements, results))
+}
+
 pub fn lint_line_length(
     tables: &Tables,
     elements: &ReflowSequenceType,
@@ -2072,8 +2323,8 @@ pub fn lint_line_length(
             "".into()
         };
 
-        let char_len = source_char_len(&line_buffer);
-        let line_len = current_indent.len() + char_len;
+        let char_len = source_char_len(&line_buffer, &tables.layout);
+        let line_len = tables.layout.base_indent + tables.layout.width(&current_indent) + char_len;
 
         let first_seg = line_buffer[0].segments()[0].clone();
         let line_no = first_seg.get_position_marker().unwrap().working_line_no;
@@ -2117,10 +2368,48 @@ pub fn lint_line_length(
                 log::debug!("Handling as unfixable line.");
             } else {
                 log::debug!("Handling as normal line.");
-                let target_balance = matched_indents
+                let mut target_balance = matched_indents
                     .keys()
                     .map(|k| k.into_f64())
                     .fold(f64::INFINITY, f64::min);
+                // If breaking an operator still leaves an overlong operand,
+                // expand function arguments first instead of creating an extra
+                // operator-only continuation before that same function expansion.
+                let integer_balance = target_balance.ceil();
+                let mut start = i - line_buffer.len();
+                let mut operand_overflows = false;
+                for end in matched_indents[&FloatTypeWrapper::new(target_balance)]
+                    .iter()
+                    .copied()
+                    .chain(Some(i))
+                {
+                    if end > start {
+                        let width = tables.layout.base_indent
+                            + tables.layout.width(&current_indent)
+                            + source_char_len(&elem_buffer[start..end], &tables.layout);
+                        operand_overflows |= width > line_length_limit;
+                    }
+                    start = end + 1;
+                }
+                if operand_overflows
+                    && target_balance.fract() >= 0.55
+                    && let Some(points) =
+                        matched_indents.get(&FloatTypeWrapper::new(integer_balance))
+                    && points.iter().any(|&point| {
+                        point > 0
+                            && elem_buffer[point - 1]
+                                .class_types()
+                                .contains(SyntaxKind::StartBracket)
+                            && point > 2
+                            && elem_buffer[point - 3]
+                                .class_types()
+                                .contains(SyntaxKind::FunctionNameIdentifier)
+                            && rendered_column(&elem_buffer[..=point], &tables.layout)
+                                <= line_length_limit
+                    })
+                {
+                    target_balance = integer_balance;
+                }
                 let mut desired_indent = current_indent.to_string();
 
                 if target_balance >= 1.0 {

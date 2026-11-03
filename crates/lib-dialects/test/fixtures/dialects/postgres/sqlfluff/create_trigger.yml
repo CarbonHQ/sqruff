@@ -387,9 +387,10 @@ file:
           - naked_identifier: OLD
           - dot: .
           - naked_identifier: balance
-        - keyword: IS
-        - keyword: DISTINCT
-        - keyword: FROM
+        - keyword_comparison_operator:
+          - keyword: IS
+          - keyword: DISTINCT
+          - keyword: FROM
         - column_reference:
           - naked_identifier: NEW
           - dot: .
@@ -517,9 +518,10 @@ file:
           - naked_identifier: OLD
           - dot: .
           - star: '*'
-        - keyword: IS
-        - keyword: DISTINCT
-        - keyword: FROM
+        - keyword_comparison_operator:
+          - keyword: IS
+          - keyword: DISTINCT
+          - keyword: FROM
         - wildcard_identifier:
           - naked_identifier: NEW
           - dot: .

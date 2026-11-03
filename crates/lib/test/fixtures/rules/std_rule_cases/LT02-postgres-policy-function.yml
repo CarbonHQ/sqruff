@@ -1,0 +1,109 @@
+rule: LT02
+
+test_create_policy_wrapped_clauses:
+  roundtrip: true
+  fail_str: |
+    create policy p on t
+    using
+    (
+      (select matches_filter())
+    )
+    with
+    check (
+      (select matches_filter())
+    );
+  fix_str: |
+    create policy p on t
+    using
+      (
+        (select matches_filter())
+      )
+    with
+      check (
+        (select matches_filter())
+      );
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_alter_policy_wrapped_clauses:
+  roundtrip: true
+  fail_str: |
+    alter policy p on t
+    using
+    ((hub_id = current_org()))
+    with
+    check ((hub_id = current_org()));
+  fix_str: |
+    alter policy p on t
+    using
+      ((hub_id = current_org()))
+    with
+      check ((hub_id = current_org()));
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_inline_policy_brackets_own_their_indentation:
+  pass_str: |
+    create policy p on t using (
+      (select matches_filter())
+    ) with check (
+      (select matches_filter())
+    );
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_function_set_clauses:
+  roundtrip: true
+  fail_str: |
+    create function f() returns date language sql
+    set
+    "DateStyle" to 'ISO, DMY'
+    set
+    search_path = sky_atlasx, optical
+    set
+    timezone from current
+    as $$select null::date$$;
+  fix_str: |
+    create function f() returns date language sql
+    set
+      "DateStyle" to 'ISO, DMY'
+    set
+      search_path = sky_atlasx, optical
+    set
+      timezone from current
+    as $$select null::date$$;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_alter_function_set_clause:
+  roundtrip: true
+  fail_str: |
+    alter function f()
+    set
+    "DateStyle" to 'ISO, DMY';
+  fix_str: |
+    alter function f()
+    set
+      "DateStyle" to 'ISO, DMY';
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow

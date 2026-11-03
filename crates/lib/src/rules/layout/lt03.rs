@@ -81,11 +81,15 @@ FROM foo
     }
 
     fn eval(&self, context: &RuleContext) -> Vec<LintResult> {
-        if context.segment.is_type(SyntaxKind::ComparisonOperator) {
+        if context.segment.is_type(SyntaxKind::ComparisonOperator)
+            || context
+                .segment
+                .is_type(SyntaxKind::KeywordComparisonOperator)
+        {
             let comparison_positioning = context
                 .config
                 .reflow()
-                .line_position_for(SyntaxKind::ComparisonOperator)
+                .line_position_for(context.segment.get_type())
                 .unwrap();
 
             if self.check_trail_lead_shortcut(
@@ -149,6 +153,7 @@ FROM foo
                 SyntaxSet::new(&[
                     SyntaxKind::BinaryOperator,
                     SyntaxKind::ComparisonOperator,
+                    SyntaxKind::KeywordComparisonOperator,
                     SyntaxKind::AssignmentOperator,
                     SyntaxKind::OracleAssignmentOperator,
                     SyntaxKind::PipeOperator,

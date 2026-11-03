@@ -1,0 +1,53 @@
+rule: LT02
+
+test_set_local_and_session_contents_allow:
+  roundtrip: true
+  fail_str: |
+    set
+    local search_path = sky_atlasx,
+      optical;
+    set
+    session log_statement = 'none';
+  fix_str: |
+    set
+      local search_path = sky_atlasx,
+      optical;
+    set
+      session log_statement = 'none';
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_set_local_contents_forbid:
+  roundtrip: true
+  fail_str: |
+    set
+    local search_path = sky_atlasx,
+    optical;
+  fix_str: |
+    set
+      local search_path = sky_atlasx,
+      optical;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: forbid
+
+test_set_local_contents_require:
+  roundtrip: true
+  fail_str: |
+    set
+      local log_statement = 'none';
+  fix_str: |
+    set local log_statement = 'none';
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: require

@@ -281,7 +281,7 @@ dialect = {dialect}
             }
             TestCaseKind::Fail { fail_str } => {
                 let file = linter.lint_string_wrapped(&fail_str, false).unwrap();
-                assert_ne!(&file.violations(), &[]);
+                assert_ne!(&file.violations(), &[], "{}: {}", rule, case.name);
                 if let Some(expected_line_numbers) = &case.line_numbers {
                     let actual_line_numbers = file
                         .violations()

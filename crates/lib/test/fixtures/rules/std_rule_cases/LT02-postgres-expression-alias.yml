@@ -1,0 +1,169 @@
+rule: LT02
+
+test_scalar_subquery_comparison_owns_bracket_indent:
+  roundtrip: true
+  fail_str: |
+    delete from catalog_slot
+    where
+      id = (
+          select
+            reference_catalog_entry_key
+          from
+            catalog_transient_classification
+          where
+            sector_id = 1
+        );
+  fix_str: |
+    delete from catalog_slot
+    where
+      id = (
+        select
+          reference_catalog_entry_key
+        from
+          catalog_transient_classification
+        where
+          sector_id = 1
+      );
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_wrapped_comparison_keeps_its_own_indent:
+  pass_str: |
+    select * from t
+    where
+      id
+        = (
+          select
+            other_id
+          from other_table
+        );
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_conflict_target_predicate_multiline:
+  roundtrip: true
+  fail_str: |
+    insert into t (id) values (1)
+    on conflict (id)
+    where
+    (
+      sector_id is not null
+      and catalog_slot_id is not null
+    ) do nothing;
+  fix_str: |
+    insert into t (id) values (1)
+    on conflict (id)
+    where
+      (
+        sector_id is not null
+        and catalog_slot_id is not null
+      )
+    do nothing;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_conflict_target_predicate_inline_brackets:
+  roundtrip: true
+  fail_str: |
+    insert into t (id) values (1)
+    on conflict (id)
+    where
+    (id is not null) do nothing;
+  fix_str: |
+    insert into t (id) values (1)
+    on conflict (id)
+    where
+      (id is not null)
+    do nothing;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_table_alias_shares_table_indent:
+  roundtrip: true
+  fail_str: |
+    select
+      instrument.id
+    from
+      instrument
+      join
+        instrument_value
+          violet_instrument_value
+        on violet_instrument_value.sector_id = instrument.sector_id;
+  fix_str: |
+    select
+      instrument.id
+    from
+      instrument
+      join
+        instrument_value
+        violet_instrument_value
+        on violet_instrument_value.sector_id = instrument.sector_id;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+      indented_joins: true
+
+test_select_alias_keeps_continuation_indent:
+  pass_str: |
+    select
+      id
+        as identifier
+    from
+      t;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_keyword_comparison_scalar_subquery:
+  pass_str: |
+    select * from t
+    where
+      id is not distinct from (
+        select
+          id
+        from u
+      );
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_table_function_alias_retains_typed_column_list:
+  pass_str: |
+    select *
+    from
+      jsonb_to_recordset('{}'::jsonb)
+      as row_data (
+        id uuid,
+        name text
+      );
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow

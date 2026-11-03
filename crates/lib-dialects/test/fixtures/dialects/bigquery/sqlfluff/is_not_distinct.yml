@@ -10,9 +10,10 @@ file:
             - expression:
               - column_reference:
                 - naked_identifier: a_column
-              - keyword: IS
-              - keyword: DISTINCT
-              - keyword: FROM
+              - keyword_comparison_operator:
+                - keyword: IS
+                - keyword: DISTINCT
+                - keyword: FROM
               - column_reference:
                 - naked_identifier: b_column
             - end_bracket: )
@@ -35,10 +36,11 @@ file:
             - expression:
               - column_reference:
                 - naked_identifier: b_column
-              - keyword: IS
-              - keyword: NOT
-              - keyword: DISTINCT
-              - keyword: FROM
+              - keyword_comparison_operator:
+                - keyword: IS
+                - keyword: NOT
+                - keyword: DISTINCT
+                - keyword: FROM
               - column_reference:
                 - naked_identifier: c_column
             - end_bracket: )
@@ -58,9 +60,10 @@ file:
         - expression:
           - column_reference:
             - naked_identifier: a_column
-          - keyword: IS
-          - keyword: DISTINCT
-          - keyword: FROM
+          - keyword_comparison_operator:
+            - keyword: IS
+            - keyword: DISTINCT
+            - keyword: FROM
           - column_reference:
             - naked_identifier: b_column
     - from_clause:
@@ -79,10 +82,11 @@ file:
         - expression:
           - column_reference:
             - naked_identifier: b_column
-          - keyword: IS
-          - keyword: NOT
-          - keyword: DISTINCT
-          - keyword: FROM
+          - keyword_comparison_operator:
+            - keyword: IS
+            - keyword: NOT
+            - keyword: DISTINCT
+            - keyword: FROM
           - column_reference:
             - naked_identifier: c_column
     - from_clause:
@@ -101,9 +105,10 @@ file:
         - expression:
           - column_reference:
             - naked_identifier: a_column
-          - keyword: IS
-          - keyword: DISTINCT
-          - keyword: FROM
+          - keyword_comparison_operator:
+            - keyword: IS
+            - keyword: DISTINCT
+            - keyword: FROM
           - column_reference:
             - naked_identifier: b_column
     - from_clause:
@@ -122,10 +127,11 @@ file:
         - expression:
           - column_reference:
             - naked_identifier: b_column
-          - keyword: IS
-          - keyword: NOT
-          - keyword: DISTINCT
-          - keyword: FROM
+          - keyword_comparison_operator:
+            - keyword: IS
+            - keyword: NOT
+            - keyword: DISTINCT
+            - keyword: FROM
           - column_reference:
             - naked_identifier: c_column
     - from_clause:
@@ -155,9 +161,10 @@ file:
       - expression:
         - column_reference:
           - naked_identifier: a_column
-        - keyword: IS
-        - keyword: DISTINCT
-        - keyword: FROM
+        - keyword_comparison_operator:
+          - keyword: IS
+          - keyword: DISTINCT
+          - keyword: FROM
         - column_reference:
           - naked_identifier: b_column
 - statement_terminator: ;
@@ -180,10 +187,11 @@ file:
       - expression:
         - column_reference:
           - naked_identifier: a_column
-        - keyword: IS
-        - keyword: NOT
-        - keyword: DISTINCT
-        - keyword: FROM
+        - keyword_comparison_operator:
+          - keyword: IS
+          - keyword: NOT
+          - keyword: DISTINCT
+          - keyword: FROM
         - column_reference:
           - naked_identifier: b_column
 - statement_terminator: ;
@@ -217,9 +225,10 @@ file:
                 - naked_identifier: t_table_1
                 - dot: .
                 - naked_identifier: a_column
-              - keyword: IS
-              - keyword: DISTINCT
-              - keyword: FROM
+              - keyword_comparison_operator:
+                - keyword: IS
+                - keyword: DISTINCT
+                - keyword: FROM
               - column_reference:
                 - naked_identifier: t_table_2
                 - dot: .
@@ -255,10 +264,11 @@ file:
                 - naked_identifier: t_table_1
                 - dot: .
                 - naked_identifier: a_column
-              - keyword: IS
-              - keyword: NOT
-              - keyword: DISTINCT
-              - keyword: FROM
+              - keyword_comparison_operator:
+                - keyword: IS
+                - keyword: NOT
+                - keyword: DISTINCT
+                - keyword: FROM
               - column_reference:
                 - naked_identifier: t_table_2
                 - dot: .
@@ -280,9 +290,10 @@ file:
           - naked_identifier: t_table_1
           - dot: .
           - naked_identifier: a_column
-        - keyword: IS
-        - keyword: DISTINCT
-        - keyword: FROM
+        - keyword_comparison_operator:
+          - keyword: IS
+          - keyword: DISTINCT
+          - keyword: FROM
         - column_reference:
           - naked_identifier: t_table_2
           - dot: .
@@ -325,10 +336,11 @@ file:
           - naked_identifier: t_table_1
           - dot: .
           - naked_identifier: a_column
-        - keyword: IS
-        - keyword: NOT
-        - keyword: DISTINCT
-        - keyword: FROM
+        - keyword_comparison_operator:
+          - keyword: IS
+          - keyword: NOT
+          - keyword: DISTINCT
+          - keyword: FROM
         - column_reference:
           - naked_identifier: t_table_2
           - dot: .

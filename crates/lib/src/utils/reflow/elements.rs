@@ -677,7 +677,7 @@ impl IndentStats {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReflowBlockData {
     segment: ErasedSegment,
     spacing_before: Spacing,
@@ -752,6 +752,14 @@ impl ReflowBlock {
 
     pub fn stack_spacing_configs(&self) -> &IntMap<u64, Spacing> {
         &self.stack_spacing_configs
+    }
+
+    pub(crate) fn preserve_newlines_within(&mut self, hash: u64) {
+        if self.stack_spacing_configs.get(&hash) == Some(&Spacing::SingleInline) {
+            Rc::make_mut(&mut self.value)
+                .stack_spacing_configs
+                .insert(hash, Spacing::Single);
+        }
     }
 
     pub fn line_position_configs(&self) -> &IntMap<u64, LinePositionConfig> {

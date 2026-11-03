@@ -172,10 +172,12 @@ left join bar
         for expression in join_on_condition_expressions {
             let mut expression_group = Vec::new();
             for element in Segments::new(expression, None).children_all() {
-                if !matches!(
-                    element.get_type(),
-                    SyntaxKind::Whitespace | SyntaxKind::Newline
-                ) {
+                if !element.is_meta()
+                    && !matches!(
+                        element.get_type(),
+                        SyntaxKind::Whitespace | SyntaxKind::Newline
+                    )
+                {
                     expression_group.push(element);
                 }
             }

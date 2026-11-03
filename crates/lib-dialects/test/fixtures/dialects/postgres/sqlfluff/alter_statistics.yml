@@ -58,12 +58,13 @@ file:
     - start_bracket: (
     - keyword: correlation
     - end_bracket: )
-  - keyword: ON
-  - column_reference:
-    - naked_identifier: a
-  - comma: ','
-  - column_reference:
-    - naked_identifier: b
+  - statistics_on_clause:
+    - keyword: ON
+    - column_reference:
+      - naked_identifier: a
+    - comma: ','
+    - column_reference:
+      - naked_identifier: b
   - keyword: FROM
   - table_reference:
     - naked_identifier: t
@@ -86,12 +87,13 @@ file:
     - comma: ','
     - keyword: correlation
     - end_bracket: )
-  - keyword: ON
-  - column_reference:
-    - naked_identifier: a
-  - comma: ','
-  - column_reference:
-    - naked_identifier: b
+  - statistics_on_clause:
+    - keyword: ON
+    - column_reference:
+      - naked_identifier: a
+    - comma: ','
+    - column_reference:
+      - naked_identifier: b
   - keyword: FROM
   - table_reference:
     - naked_identifier: t

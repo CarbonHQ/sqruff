@@ -1,3 +1,4 @@
+// Modified for Oxfmt: do not undo long-line wrapping for a single SELECT target.
 use hashbrown::HashMap;
 use itertools::{Itertools, enumerate};
 use sqruff_lib_core::dialects::syntax::{SyntaxKind, SyntaxSet};
@@ -143,7 +144,10 @@ FROM test_table;
     }
 
     fn crawl_behaviour(&self) -> Crawler {
-        SegmentSeekerCrawler::new(const { SyntaxSet::new(&[SyntaxKind::SelectClause]) }).into()
+        SegmentSeekerCrawler::new(
+            const { SyntaxSet::new(&[SyntaxKind::SelectClause, SyntaxKind::StatisticsOnClause]) },
+        )
+        .into()
     }
 }
 
@@ -151,12 +155,19 @@ impl RuleLT09 {
     fn get_indexes(context: &RuleContext) -> SelectTargetsInfo {
         let children = FunctionalContext::new(context).segment().children_all();
 
-        let select_targets = children
-            .filter(|segment: &ErasedSegment| segment.is_type(SyntaxKind::SelectClauseElement));
+        let statistics = context.segment.is_type(SyntaxKind::StatisticsOnClause);
+        let select_targets = children.filter(|segment: &ErasedSegment| {
+            segment.is_type(SyntaxKind::SelectClauseElement)
+                || (statistics
+                    && (segment.is_type(SyntaxKind::ColumnReference)
+                        || segment.is_type(SyntaxKind::Expression)))
+        });
 
         let first_select_target_idx = select_targets.first().and_then(|it| children.find(it));
 
-        let selects = children.filter(|segment: &ErasedSegment| segment.is_keyword("select"));
+        let selects = children.filter(|segment: &ErasedSegment| {
+            segment.is_keyword(if statistics { "on" } else { "select" })
+        });
 
         let select_idx =
             (!selects.is_empty()).then(|| children.find(selects.first().unwrap()).unwrap());
@@ -369,6 +380,38 @@ impl RuleLT09 {
             .descendant_type_set()
             .contains(SyntaxKind::Newline)
         {
+            return Vec::new();
+        }
+
+        // LT05 may have moved a long target off the SELECT line. Moving it
+        // back would alternate between two layouts on successive format runs.
+        let max_line_length = context
+            .config
+            .get("max_line_length", "core")
+            .as_int()
+            .unwrap_or(0);
+        let select = &select_children[select_idx];
+        let start_column = select
+            .get_position_marker()
+            .map_or(1, |pos| pos.working_line_pos);
+        let modifier_length = select_children
+            .iter()
+            .filter(|segment| segment.is_type(SyntaxKind::SelectClauseModifier))
+            .map(|segment| segment.raw().chars().count() + 1)
+            .sum::<usize>();
+        let line_length = start_column.saturating_sub(1)
+            + select.raw().chars().count()
+            + 1
+            + modifier_length
+            + context.tables.layout.base_indent
+            + context.tables.layout.width(
+                &target_seg
+                    .get_raw_segments()
+                    .iter()
+                    .map(|segment| context.tables.layout.rendered(segment.raw()))
+                    .collect::<String>(),
+            );
+        if max_line_length > 0 && line_length > max_line_length as usize {
             return Vec::new();
         }
 

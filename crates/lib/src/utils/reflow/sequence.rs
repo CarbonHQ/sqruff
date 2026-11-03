@@ -12,7 +12,8 @@ use super::depth_map::DepthMap;
 use super::elements::{ReflowBlock, ReflowElement, ReflowPoint, ReflowSequenceType};
 use super::rebreak::{LinePosition, rebreak_keywords_sequence, rebreak_sequence};
 use super::reindent::{
-    IndentationExclusions, construct_single_indent, lint_indent_points, lint_line_length,
+    IndentationExclusions, coalesce_relation_aliases, construct_single_indent, lint_indent_points,
+    lint_line_length, rendered_column,
 };
 use crate::core::config::FluffConfig;
 use crate::core::rules::LintResult;
@@ -168,7 +169,94 @@ impl<'a, 'b> ReflowSequence<'a, 'b> {
             elem_buff.push(ReflowPoint::new(seg_buff).into());
         }
 
+        Self::defer_policy_header_dedent(&mut elem_buff);
         elem_buff
+    }
+
+    /// An inline USING expression continues a wrapped policy header's indent.
+    /// Keep that scope until the clause ends, rather than dedenting halfway
+    /// through the line containing its opening parenthesis. Standalone USING
+    /// clauses retain the grammar's statement-level scope.
+    fn defer_policy_header_dedent(elements: &mut [ReflowElement]) {
+        for using_idx in 1..elements.len() {
+            let Some(block) = elements[using_idx].as_block() else {
+                continue;
+            };
+            if !block.class_types().contains(SyntaxKind::Keyword)
+                || !block.segment().raw().eq_ignore_ascii_case("USING")
+            {
+                continue;
+            }
+            let depth = block.depth_info();
+            let Some(policy_depth) = depth.stack_class_types.len().checked_sub(2) else {
+                continue;
+            };
+            if !depth.stack_class_types[policy_depth].contains(SyntaxKind::CreatePolicyStatement)
+                || !depth.stack_class_types[policy_depth + 1]
+                    .contains(SyntaxKind::PolicyUsingClause)
+            {
+                continue;
+            }
+            let before = using_idx - 1;
+            let Some(point) = elements[before].as_point() else {
+                continue;
+            };
+            if point.num_newlines() > 0 || point.indent_impulse().impulse != -1 {
+                continue;
+            }
+            let policy_hash = depth.stack_hashes[policy_depth];
+            let clause_hash = depth.stack_hashes[policy_depth + 1];
+            let Some(opening) = (0..before).rev().find(|&idx| {
+                elements[idx]
+                    .segments()
+                    .iter()
+                    .any(|s| s.is_type(SyntaxKind::Implicit))
+                    && elements
+                        .get(idx + 1)
+                        .and_then(ReflowElement::as_block)
+                        .is_some_and(|next| {
+                            next.depth_info().stack_hashes.last() == Some(&policy_hash)
+                        })
+            }) else {
+                continue;
+            };
+            if !elements[opening..before]
+                .iter()
+                .any(|element| element.as_point().is_some_and(|p| p.num_newlines() > 0))
+            {
+                continue;
+            }
+            let mut end = using_idx;
+            while elements
+                .get(end + 2)
+                .and_then(ReflowElement::as_block)
+                .is_some_and(|next| next.depth_info().stack_hash_set.contains(&clause_hash))
+            {
+                end += 2;
+            }
+            if !elements[end].class_types().contains(SyntaxKind::EndBracket)
+                || elements
+                    .get(end + 1)
+                    .and_then(ReflowElement::as_point)
+                    .is_none()
+            {
+                continue;
+            }
+            // Only move zero-width grammar metadata. All source whitespace and
+            // fix anchors remain at their original points.
+            let mut before_segments = elements[before].segments().to_vec();
+            let Some(dedent_idx) = before_segments
+                .iter()
+                .position(|s| s.is_type(SyntaxKind::Dedent))
+            else {
+                continue;
+            };
+            let dedent = before_segments.remove(dedent_idx);
+            let mut after_segments = elements[end + 1].segments().to_vec();
+            after_segments.push(dedent);
+            elements[before] = ReflowPoint::new(before_segments).into();
+            elements[end + 1] = ReflowPoint::new(after_segments).into();
+        }
     }
 
     pub fn from_around_target(
@@ -338,7 +426,98 @@ impl<'a, 'b> ReflowSequence<'a, 'b> {
         }
     }
 
+    /// An inline privilege list is a width-limited preference. Preserve a long
+    /// list's existing breaks so LT01 does not undo LT05 on every formatter run.
+    fn preserve_long_permission_lists(&mut self, tables: &Tables) {
+        if self.reflow_config.max_line_length == 0
+            || self
+                .reflow_config
+                .get_block_config(&SyntaxSet::new(&[SyntaxKind::AccessPermissions]), None)
+                .spacing_within
+                != Some(Spacing::SingleInline)
+        {
+            return;
+        }
+        let mut start = 0;
+        while start < self.elements.len() {
+            let Some(block) = self.elements[start].as_block() else {
+                start += 1;
+                continue;
+            };
+            let Some(depth) = block
+                .depth_info()
+                .stack_class_types
+                .iter()
+                .position(|types| types.contains(SyntaxKind::AccessPermissions))
+            else {
+                start += 1;
+                continue;
+            };
+            let hash = block.depth_info().stack_hashes[depth];
+            let mut end = start;
+            while self
+                .elements
+                .get(end + 2)
+                .and_then(ReflowElement::as_block)
+                .is_some_and(|next| next.depth_info().stack_hash_set.contains(&hash))
+            {
+                end += 2;
+            }
+            let boundary = start.saturating_sub(1);
+            let mut candidate = String::new();
+            for idx in boundary..=end {
+                let element = &self.elements[idx];
+                let joined;
+                let segments = if let Some(point) = element.as_point() {
+                    (_, joined) = point.respace_point(
+                        tables,
+                        idx.checked_sub(1).and_then(|i| self.elements[i].as_block()),
+                        self.elements.get(idx + 1).and_then(ReflowElement::as_block),
+                        self.root_segment,
+                        Vec::new(),
+                        false,
+                        "before",
+                        self.reflow_config.indent_unit,
+                        self.reflow_config.tab_space_size,
+                    );
+                    joined.segments()
+                } else {
+                    element.segments()
+                };
+                for segment in segments {
+                    candidate.push_str(tables.layout.rendered(segment.raw()));
+                }
+            }
+            // Include an attached ON clause or comment. Joining only the list
+            // must not create an overlong line which wrapping immediately splits.
+            for segment in self.elements[end + 1..]
+                .iter()
+                .flat_map(ReflowElement::segments)
+            {
+                let rendered = tables.layout.rendered(segment.raw());
+                if let Some(newline) = rendered.find(['\r', '\n']) {
+                    candidate.push_str(&rendered[..newline]);
+                    break;
+                }
+                candidate.push_str(rendered);
+            }
+            if candidate.contains(['\r', '\n'])
+                || rendered_column(&self.elements[..boundary], &tables.layout)
+                    + tables.layout.width(&candidate)
+                    > self.reflow_config.max_line_length
+            {
+                for element in &mut self.elements[start..=end] {
+                    if let ReflowElement::Block(block) = element {
+                        block.preserve_newlines_within(hash);
+                    }
+                }
+            }
+            start = end + 1;
+        }
+    }
+
     pub fn respace(mut self, tables: &Tables, strip_newlines: bool, filter: Filter) -> Self {
+        self.preserve_long_permission_lists(tables);
         let mut lint_results = take(&mut self.lint_results);
         let mut new_elements = Vec::new();
 
@@ -539,6 +718,19 @@ impl<'a, 'b> ReflowSequence<'a, 'b> {
     pub fn break_long_lines(self, tables: &Tables) -> Self {
         if !self.lint_results.is_empty() {
             panic!("break_long_lines cannot currently handle pre-existing embodied fixes");
+        }
+
+        if let Some((elements, lint_results)) = coalesce_relation_aliases(
+            tables,
+            &self.elements,
+            self.root_segment,
+            self.reflow_config,
+        ) {
+            return Self {
+                elements,
+                lint_results,
+                ..self
+            };
         }
 
         let single_indent = construct_single_indent(self.reflow_config.indent_unit);

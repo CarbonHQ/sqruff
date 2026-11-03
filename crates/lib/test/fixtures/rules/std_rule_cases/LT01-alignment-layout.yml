@@ -1,0 +1,38 @@
+rule: LT01,LT02,LT09
+
+test_alias_source_alignment_after_select_target_breaks:
+  roundtrip: true
+  fail_str: |
+    select a as first_value, longer_name as second_value from t;
+  fix_str: |
+    select
+      a           as first_value,
+      longer_name as second_value
+    from t;
+  configs:
+    indentation:
+      tab_space_size: 2
+    layout:
+      type:
+        alias_expression:
+          spacing_before: align
+          align_within: select_clause
+          align_scope: bracketed
+          alignment_coordinate_space: source
+
+test_alias_compact_source_alignment_after_select_target_breaks:
+  roundtrip: true
+  fail_str: |
+    select a as first_value, longer_name as second_value from t;
+  fix_str: |
+    select
+      a           as first_value,
+      longer_name as second_value
+    from t;
+  configs:
+    indentation:
+      tab_space_size: 2
+    layout:
+      type:
+        alias_expression:
+          spacing_before: align:alias_expression:select_clause:bracketed:source

@@ -146,12 +146,42 @@ impl Linter {
         filename: Option<String>,
         fix: bool,
     ) -> Result<LintedFile, SQLFluffUserError> {
-        if let Some(linter) = self.with_file_config(filename.as_deref())? {
-            return linter.lint_string(sql, filename, fix);
-        }
-        let scoped = self.with_inline_config(sql)?;
-        let linter = scoped.as_ref().unwrap_or(self);
-        let tables = Tables::default();
+        self.lint_string_scoped(sql, filename, fix, None)
+    }
+
+    /// Lint SQL using the embedding host's rendered token widths and indentation.
+    /// The context belongs to this input, not the cached linter configuration.
+    pub fn lint_string_with_layout(
+        &self,
+        sql: &str,
+        filename: Option<String>,
+        fix: bool,
+        layout: sqruff_lib_core::parser::segments::LayoutContext,
+    ) -> Result<LintedFile, SQLFluffUserError> {
+        self.lint_string_scoped(sql, filename, fix, Some(layout))
+    }
+
+    fn lint_string_scoped(
+        &self,
+        sql: &str,
+        filename: Option<String>,
+        fix: bool,
+        layout: Option<sqruff_lib_core::parser::segments::LayoutContext>,
+    ) -> Result<LintedFile, SQLFluffUserError> {
+        let file_config = self.with_file_config(filename.as_deref())?;
+        let linter = file_config.as_ref().unwrap_or(self);
+        let inline_config = linter.with_inline_config(sql)?;
+        let linter = inline_config.as_ref().unwrap_or(linter);
+        let layout = layout.unwrap_or_else(|| sqruff_lib_core::parser::segments::LayoutContext {
+            tab_width: linter
+                .config
+                .get("tab_space_size", "indentation")
+                .as_int()
+                .unwrap_or(4) as usize,
+            ..Default::default()
+        });
+        let mut tables = Tables::default();
+        tables.layout = layout;
         let parsed = linter.parse_string_with_config(&tables, sql, filename)?;
         linter.lint_parsed(&tables, parsed, fix)
     }
@@ -806,6 +836,11 @@ impl Linter {
                         },
                     );
 
+                    if tables.padding_exhausted() {
+                        return Err(SQLFluffUserError::new(
+                            "SQL generated newline budget exceeded".into(),
+                        ));
+                    }
                     if let Err(Exception) = result {
                         if is_first_linter_pass {
                             initial_violations.push(
@@ -1128,6 +1163,167 @@ mod tests {
     use crate::core::rules::context::RuleContext;
     use crate::core::rules::crawlers::{Crawler, RootOnlyCrawler};
     use crate::core::rules::{Erased, ErasedRule, LintResult, Rule, RuleGroups, RuleSet};
+
+    #[test]
+    fn invalid_inline_rule_options_report_errors() {
+        for (rule, setting) in [
+            ("CP05", "capitalisation.types:ignore_words:1"),
+            ("CP05", "capitalisation.types:ignore_words_regex:1"),
+            (
+                "LT15",
+                "layout.newlines:minimum_empty_lines_between_statements:2147483647",
+            ),
+            (
+                "LT15",
+                "layout.newlines:minimum_empty_lines_between_statements:-1",
+            ),
+        ] {
+            let config = FluffConfig::from_source(
+                &format!("[sqruff]\ndialect = postgres\nrules = {rule}\n"),
+                None,
+            );
+            let linter = Linter::new(config, None, None, true).unwrap();
+            let sql = format!("-- sqruff:rules:{setting}\nselect 1; select 2;");
+            assert!(linter.lint_string(&sql, None, true).is_err(), "{setting}");
+        }
+    }
+
+    #[test]
+    fn generated_newline_budget_aborts_before_applying_fixes() {
+        let config = FluffConfig::from_source(
+            "[sqruff]\ndialect = postgres\nrules = LT15\n[sqruff:rules:layout.newlines]\nminimum_empty_lines_between_statements = 2\n",
+            None,
+        );
+        let linter = Linter::new(config, None, None, true).unwrap();
+        let tables = Tables::default();
+        assert!(tables.reserve_padding(16_383));
+        let parsed = linter
+            .parse_string(&tables, "select 1; select 2;", None)
+            .unwrap();
+        assert!(linter.lint_parsed(&tables, parsed, true).is_err());
+    }
+
+    #[test]
+    fn inline_permission_lists_respect_width_and_remain_stable() {
+        let config = FluffConfig::from_source(
+            "[sqruff]\ndialect = postgres\nrules = LT01,LT02,LT05,LT12\nmax_line_length = 120\n[sqruff:indentation]\ntab_space_size = 2\nimplicit_indents = allow\n[sqruff:layout:type:access_permissions]\nspacing_before = single:inline\nspacing_within = single:inline\n",
+            None,
+        );
+        let linter = Linter::new(config, None, None, true).unwrap();
+        let fix = |sql: &str, base_indent| {
+            linter
+                .lint_string_with_layout(
+                    sql,
+                    None,
+                    true,
+                    sqruff_lib_core::parser::segments::LayoutContext {
+                        base_indent,
+                        tab_width: 2,
+                        ..Default::default()
+                    },
+                )
+                .unwrap()
+                .fix_string()
+        };
+        for (verb, recipient) in [("grant", "to"), ("revoke", "from")] {
+            let input = format!(
+                "{verb}\n  select,\n  insert,\n  delete,\n  update\non table sky_atlasx.catalog_slot {recipient} catalog_writers;\n"
+            );
+            let expected = format!(
+                "{verb} select, insert, delete, update\non table sky_atlasx.catalog_slot {recipient} catalog_writers;\n"
+            );
+            assert_eq!(fix(&input, 0), expected);
+            assert_eq!(fix(&expected, 0), expected);
+        }
+        for sql in [
+            "grant select (first_very_long_column_name, second_very_long_column_name, third_very_long_column_name), update (fourth_very_long_column_name) on table sky_atlasx.catalog_slot to catalog_writers;\n",
+            "grant\n  select, -- preserve the comment\n  insert,\n  delete,\n  update\non table sky_atlasx.catalog_slot to catalog_writers;\n",
+            "grant select,\n  insert,\n  delete,\n  update on table sky_atlasx.a_very_long_table_name_that_needs_wrapping_with_its_privileges to catalog_writers;\n",
+        ] {
+            for base_indent in [0, 80] {
+                let fixed = fix(sql, base_indent);
+                assert_eq!(fix(&fixed, base_indent), fixed, "{sql}");
+                assert!(fixed.contains("select"));
+                assert!(fixed.contains("update"));
+            }
+        }
+        // The privilege line is exactly 36 columns; the host's indentation
+        // must count when deciding whether it can be collapsed.
+        let compact = "grant select, insert, delete, update\non t to x;\n";
+        let wrapped = "grant select,\n  insert,\n  delete,\n  update\non t to x;\n";
+        let fitting = fix(wrapped, 84);
+        assert_eq!(fitting, compact);
+        let narrow = fix(wrapped, 85);
+        assert_ne!(narrow, compact);
+        assert_eq!(fix(&narrow, 85), narrow);
+    }
+
+    #[test]
+    fn embedded_long_comparisons_wrap_with_continuation_indentation() {
+        let config = FluffConfig::from_source(
+            "[sqruff]\ndialect = postgres\nrules = LT01,LT02,LT03,LT04,LT05,LT06,LT07,LT09,LT10,LT11,LT12,LT13,LT14,LT15\nmax_line_length = 80\n[sqruff:indentation]\ntab_space_size = 2\nimplicit_indents = allow\nindented_joins = true\n",
+            None,
+        );
+        let linter = Linter::new(config, None, None, true).unwrap();
+        let sql = "select * from x join y on instrument_linked_number.primary_station_id = instrument_linked_timestamp.primary_station_id and instrument_linked_number.primary_instrument_id = instrument_linked_timestamp.primary_instrument_id";
+        let context = sqruff_lib_core::parser::segments::LayoutContext {
+            base_indent: 4,
+            tab_width: 2,
+            ..Default::default()
+        };
+        let output = linter
+            .lint_string_with_layout(sql, None, true, context)
+            .unwrap()
+            .fix_string();
+        assert!(output.lines().all(|line| line.len() + 4 <= 80), "{output}");
+    }
+
+    #[test]
+    fn embedded_rendered_widths_are_per_document_and_fixes_are_stable() {
+        use sqruff_lib_core::parser::segments::LayoutContext;
+        let config = FluffConfig::from_source(
+            "[sqruff]\ndialect = postgres\nrules = LT01,LT02,LT05,LT09,LT12\nmax_line_length = 80\n[sqruff:indentation]\nindent_unit = space\ntab_space_size = 2\nimplicit_indents = allow\n",
+            None,
+        );
+        let linter = Linter::new(config, None, None, false).unwrap();
+        let sql = "select sample_blob::jsonb || jsonb_build_object(__expr__, 'amber blue violet 42') from t\n";
+        let context = LayoutContext {
+            base_indent: 6,
+            tab_width: 2,
+            replacements: [(
+                "__expr__".into(),
+                "${calibrationFrame.bandCode}::text".into(),
+            )]
+            .into(),
+        };
+        let fixed = linter
+            .lint_string_with_layout(sql, None, true, context.clone())
+            .unwrap()
+            .fix_string();
+        assert!(
+            fixed.contains("sample_blob::jsonb || jsonb_build_object(\n"),
+            "{fixed}"
+        );
+        assert!(fixed.contains("__expr__"));
+        let second = linter
+            .lint_string_with_layout(&fixed, None, true, context)
+            .unwrap()
+            .fix_string();
+        assert_eq!(fixed, second);
+        // The same cached linter can immediately measure a different interpolation.
+        let short = LayoutContext {
+            replacements: [("__expr__".into(), "${x}".into())].into(),
+            ..Default::default()
+        };
+        let compact = linter
+            .lint_string_with_layout(sql, None, true, short)
+            .unwrap()
+            .fix_string();
+        assert!(
+            compact.contains("jsonb_build_object(__expr__, 'amber blue violet 42')"),
+            "{compact}"
+        );
+    }
 
     #[derive(Debug)]
     struct RuleZZ01;

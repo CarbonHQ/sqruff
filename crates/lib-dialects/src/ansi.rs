@@ -562,12 +562,15 @@ pub fn raw_dialect() -> Dialect {
         ),
         (
             "IsDistinctFromGrammar".into(),
-            Sequence::new(vec![
-                Ref::keyword("IS").to_matchable(),
-                Ref::keyword("NOT").optional().to_matchable(),
-                Ref::keyword("DISTINCT").to_matchable(),
-                Ref::keyword("FROM").to_matchable(),
-            ])
+            NodeMatcher::new(SyntaxKind::KeywordComparisonOperator, |_| {
+                Sequence::new(vec![
+                    Ref::keyword("IS").to_matchable(),
+                    Ref::keyword("NOT").optional().to_matchable(),
+                    Ref::keyword("DISTINCT").to_matchable(),
+                    Ref::keyword("FROM").to_matchable(),
+                ])
+                .to_matchable()
+            })
             .to_matchable()
             .into(),
         ),
@@ -1042,7 +1045,9 @@ pub fn raw_dialect() -> Dialect {
                 Bracketed::new(vec![
                     Sequence::new(vec![
                         Ref::keyword("WHERE").to_matchable(),
+                        MetaSegment::implicit_indent().to_matchable(),
                         Ref::new("ExpressionSegment").to_matchable(),
+                        MetaSegment::dedent().to_matchable(),
                     ])
                     .to_matchable(),
                 ])
@@ -3475,9 +3480,14 @@ pub fn raw_dialect() -> Dialect {
         (
             "AccessPermissionsSegment".into(),
             NodeMatcher::new(SyntaxKind::AccessPermissions, |_| {
-                Delimited::new(vec![Ref::new("AccessPermissionSegment").to_matchable()])
-                    .config(|this| this.terminators = vec![Ref::keyword("ON").to_matchable()])
-                    .to_matchable()
+                Sequence::new(vec![
+                    MetaSegment::implicit_indent().to_matchable(),
+                    Delimited::new(vec![Ref::new("AccessPermissionSegment").to_matchable()])
+                        .config(|this| this.terminators = vec![Ref::keyword("ON").to_matchable()])
+                        .to_matchable(),
+                    MetaSegment::dedent().to_matchable(),
+                ])
+                .to_matchable()
             })
             .to_matchable()
             .into(),
@@ -4699,6 +4709,31 @@ pub fn raw_dialect() -> Dialect {
             .into(),
         ),
         (
+            "TableAliasExpressionSegment".into(),
+            NodeMatcher::new(SyntaxKind::AliasExpression, |dialect| {
+                // A relation's alias belongs at the same indentation as the
+                // relation. Keep the dialect's alias syntax (including typed
+                // column lists) without the SELECT-alias continuation indent.
+                dialect
+                    .grammar("AliasExpressionSegment")
+                    .match_grammar(dialect)
+                    .unwrap()
+                    .copy(
+                        None,
+                        None,
+                        None,
+                        Some(vec![
+                            MetaSegment::indent().to_matchable(),
+                            MetaSegment::dedent().to_matchable(),
+                        ]),
+                        vec![],
+                        false,
+                    )
+            })
+            .to_matchable()
+            .into(),
+        ),
+        (
             "FromExpressionElementSegment".into(),
             NodeMatcher::new(SyntaxKind::FromExpressionElement, |_| {
                 Sequence::new(vec![
@@ -4708,7 +4743,7 @@ pub fn raw_dialect() -> Dialect {
                     optionally_bracketed(vec![Ref::new("TableExpressionSegment").to_matchable()])
                         .to_matchable(),
                     Ref::new("TemporalQuerySegment").optional().to_matchable(),
-                    Ref::new("AliasExpressionSegment")
+                    Ref::new("TableAliasExpressionSegment")
                         .exclude(one_of(vec![
                             Ref::new("FromClauseTerminatorGrammar").to_matchable(),
                             Ref::new("SamplingExpressionSegment").to_matchable(),
@@ -4721,7 +4756,7 @@ pub fn raw_dialect() -> Dialect {
                     Sequence::new(vec![
                         Ref::keyword("WITH").to_matchable(),
                         Ref::keyword("OFFSET").to_matchable(),
-                        Ref::new("AliasExpressionSegment").to_matchable(),
+                        Ref::new("TableAliasExpressionSegment").to_matchable(),
                     ])
                     .config(|this| this.optional())
                     .to_matchable(),
@@ -5015,6 +5050,15 @@ pub fn raw_dialect() -> Dialect {
                         // precede the binary-operator alternative because sqruff keeps
                         // the first alternative when both consume the same span.
                         Ref::new("QuantifiedComparisonOperatorGrammar").to_matchable(),
+                        // A wrapped comparison is a continuation of its left operand,
+                        // rather than a sibling of the surrounding AND/OR conditions.
+                        Sequence::new(vec![
+                            MetaSegment::implicit_indent().to_matchable(),
+                            Ref::new("ComparisonOperatorGrammar").to_matchable(),
+                            Ref::new("Tail_Recurse_Expression_A_Grammar").to_matchable(),
+                            MetaSegment::dedent().to_matchable(),
+                        ])
+                        .to_matchable(),
                         // Binary operator grammar
                         Sequence::new(vec![
                             Ref::new("BinaryOperatorGrammar").to_matchable(),

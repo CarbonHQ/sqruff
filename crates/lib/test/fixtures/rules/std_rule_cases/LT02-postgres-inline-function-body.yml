@@ -1,0 +1,38 @@
+rule: LT02
+
+test_function_inline_body_after_wrapped_set:
+  pass_str: |
+    create function f() returns date language sql
+    set
+      "DateStyle" to 'ISO, DMY' as $$select null::date$$;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_procedure_inline_body_after_wrapped_set:
+  pass_str: |
+    create procedure p() language plpgsql
+    set
+      search_path = sky_atlasx, optical as $body$begin null; end;$body$;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_separate_function_body_stays_separate:
+  pass_str: |
+    create function f() returns date language sql
+    set
+      "DateStyle" to 'ISO, DMY'
+    as $$select null::date$$;
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow

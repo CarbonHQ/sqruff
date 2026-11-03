@@ -1,0 +1,20 @@
+rule: LT02,LT05
+
+test_long_table_alias_wraps_at_relation_indent:
+  roundtrip: true
+  fail_str: |
+    select *
+    from
+      table_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa alias_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;
+  fix_str: |
+    select *
+    from
+      table_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      alias_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;
+  configs:
+    core:
+      dialect: postgres
+      max_line_length: 120
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow

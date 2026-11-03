@@ -1,0 +1,84 @@
+rule: LT02
+
+test_using_attached_to_wrapped_policy_header:
+  roundtrip: true
+  fail_str: |
+    create policy observation_cycle_select on sky_atlasx.observation_cycle for
+      select
+      to catalog_readers using (
+      (
+        select
+          scope_math.matches_filter(variadic array['count-signals'::text]) as matches_filter
+      )
+    );
+  fix_str: |
+    create policy observation_cycle_select on sky_atlasx.observation_cycle for
+      select
+      to catalog_readers using (
+        (
+          select
+            scope_math.matches_filter(variadic array['count-signals'::text]) as matches_filter
+        )
+      );
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_using_attached_to_wrapped_roles:
+  roundtrip: true
+  fail_str: |
+    create policy p on t for select to
+      member using (
+      enabled
+    );
+  fix_str: |
+    create policy p on t for select to
+      member using (
+        enabled
+      );
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_following_with_check_starts_at_statement_level:
+  roundtrip: true
+  fail_str: |
+    create policy p on t for
+      update to member using (
+      enabled
+    )
+    with
+      check (enabled);
+  fix_str: |
+    create policy p on t for
+      update to member using (
+        enabled
+      )
+    with
+      check (enabled);
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow
+
+test_separate_using_stays_at_statement_level:
+  pass_str: |
+    create policy p on t for
+      select to member
+    using (
+      enabled
+    );
+  configs:
+    core:
+      dialect: postgres
+    indentation:
+      tab_space_size: 2
+      implicit_indents: allow

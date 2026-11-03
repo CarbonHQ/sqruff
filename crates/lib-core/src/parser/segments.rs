@@ -137,12 +137,67 @@ impl SegmentBuilder {
     }
 }
 
+/// Rendering information supplied by an embedding host. SQL placeholders remain
+/// ordinary tokens for parsing and fixing; only layout measures their printed text.
+#[derive(Debug, Clone)]
+pub struct LayoutContext {
+    pub base_indent: usize,
+    pub tab_width: usize,
+    pub replacements: std::collections::BTreeMap<String, String>,
+}
+
+impl Default for LayoutContext {
+    fn default() -> Self {
+        Self {
+            base_indent: 0,
+            tab_width: 4,
+            replacements: Default::default(),
+        }
+    }
+}
+
+impl LayoutContext {
+    pub fn rendered<'a>(&'a self, raw: &'a str) -> &'a str {
+        if self.replacements.is_empty() {
+            return raw;
+        }
+        self.replacements
+            .get(&raw.to_ascii_lowercase())
+            .map_or(raw, String::as_str)
+    }
+
+    pub fn width(&self, text: &str) -> usize {
+        use unicode_width::UnicodeWidthStr;
+        text.split(['\r', '\n'])
+            .map(|line| {
+                line.split('\t').map(str::width).sum::<usize>()
+                    + line.bytes().filter(|&byte| byte == b'\t').count() * self.tab_width
+            })
+            .max()
+            .unwrap_or(0)
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct Tables {
     counter: Cell<u32>,
+    generated_padding: Cell<usize>,
+    /// Per-document rendered widths. This never changes the cached dialect or rules.
+    pub layout: LayoutContext,
 }
 
 impl Tables {
+    /// Bound LT15's synthesized segments across every pass on this document.
+    pub fn reserve_padding(&self, count: usize) -> bool {
+        self.generated_padding
+            .set(self.generated_padding.get().saturating_add(count));
+        !self.padding_exhausted()
+    }
+
+    pub fn padding_exhausted(&self) -> bool {
+        self.generated_padding.get() > 16_384
+    }
+
     pub fn next_id(&self) -> u32 {
         let id = self.counter.get();
         self.counter.set(id + 1);
@@ -1565,6 +1620,16 @@ mod tests {
     use crate::lint_fix::LintFix;
     use crate::linter::compute_anchor_edit_info;
     use crate::parser::segments::test_functions::{raw_seg, raw_segments};
+
+    #[test]
+    fn rendered_layout_counts_display_columns() {
+        let layout = LayoutContext {
+            tab_width: 4,
+            ..Default::default()
+        };
+        assert_eq!(layout.width("\t界e\u{301}👩‍💻"), 9);
+        assert_eq!(layout.width("界\nabc"), 3);
+    }
 
     #[test]
     /// Test comparison of raw segments.

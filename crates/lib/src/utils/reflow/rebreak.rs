@@ -1032,7 +1032,7 @@ mod tests {
             // it should be left unaltered.
             ("select a,\n(b+c)", 6, ",\n(b", ",\n(b"),
             // This intentionally targets an incomplete span.
-            ("select a<=b", 4, "a<=", "a<="),
+            ("select a<=b", 5, "a<=", "a<="),
         ];
 
         let tables = Tables::default();

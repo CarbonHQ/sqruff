@@ -1,0 +1,22 @@
+rule: LT01
+
+test_keyword_comparison_preserves_token_boundaries:
+  pass_str: |
+    select * from t where a is not distinct from b;
+  configs:
+    core:
+      dialect: postgres
+
+test_symbolic_comparison_remains_joined:
+  pass_str: |
+    select a <= b, a >= b, a <> b;
+  configs:
+    core:
+      dialect: postgres
+
+test_keyword_comparison_with_comment:
+  pass_str: |
+    select * from t where a is /* null safe */ distinct from b;
+  configs:
+    core:
+      dialect: postgres

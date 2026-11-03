@@ -525,16 +525,17 @@ file:
           - pipe: '|'
           - pipe: '|'
         - quoted_literal: ''')'''
-      - keyword: WHERE
-      - expression:
-        - column_reference:
-          - naked_identifier: f
-          - dot: .
-          - naked_identifier: zipcode
-        - comparison_operator:
-          - raw_comparison_operator: '!'
-          - raw_comparison_operator: =
-        - quoted_literal: '''21201'''
+      - where_clause:
+        - keyword: WHERE
+        - expression:
+          - column_reference:
+            - naked_identifier: f
+            - dot: .
+            - naked_identifier: zipcode
+          - comparison_operator:
+            - raw_comparison_operator: '!'
+            - raw_comparison_operator: =
+          - quoted_literal: '''21201'''
 - statement_terminator: ;
 - statement:
   - insert_statement:

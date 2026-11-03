@@ -344,6 +344,10 @@ impl RuleLT15 {
             (counted, minimum - counted)
         };
 
+        if !context.tables.reserve_padding(newlines_to_add) {
+            return Vec::new();
+        }
+
         self.warn_if_capped();
 
         let mut fixes = vec![LintFix::create_after(
@@ -408,6 +412,14 @@ impl RuleLT15 {
 
 impl Rule for RuleLT15 {
     fn load_from_config(&self, config: &HashMap<String, Value>) -> Result<ErasedRule, String> {
+        let minimum = match config.get("minimum_empty_lines_between_statements") {
+            None => self.minimum_empty_lines_between_statements,
+            Some(value) => value
+                .as_int()
+                .filter(|v| (0..=16).contains(v))
+                .ok_or("minimum_empty_lines_between_statements must be between 0 and 16")?
+                as usize,
+        };
         Ok(RuleLT15 {
             maximum_empty_lines_between_statements: config
                 .get("maximum_empty_lines_between_statements")
@@ -424,11 +436,7 @@ impl Rule for RuleLT15 {
                 .and_then(Value::as_int)
                 .map(|v| v as usize)
                 .unwrap_or(self.maximum_empty_lines_between_batches),
-            minimum_empty_lines_between_statements: config
-                .get("minimum_empty_lines_between_statements")
-                .and_then(Value::as_int)
-                .map(|v| v as usize)
-                .unwrap_or(self.minimum_empty_lines_between_statements),
+            minimum_empty_lines_between_statements: minimum,
         }
         .erased())
     }

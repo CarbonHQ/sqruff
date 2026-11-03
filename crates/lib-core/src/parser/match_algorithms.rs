@@ -1,3 +1,4 @@
+// Modified for Oxfmt: cached match ranges are relative to the input slice index.
 use hashbrown::HashMap;
 use itertools::{Itertools as _, enumerate, multiunzip};
 use smallvec::SmallVec;
@@ -136,6 +137,7 @@ pub fn longest_match(
         cache_position.working_loc(),
         segments[idx as usize].get_type(),
         max_idx,
+        idx,
     );
 
     let loc_key = parse_context.loc_key(loc_key);
@@ -241,6 +243,26 @@ mod cache_tests {
     use crate::parser::parsers::StringParser;
     use crate::parser::segments::test_functions::generate_test_segments_func;
     use crate::parser::types::ParseMode;
+
+    #[test]
+    fn cached_matches_keep_their_input_slice_index() {
+        let mut segments = generate_test_segments_func(vec!["FOO", " ", "FOO"]);
+        // Fixes and nested parsing can share a source/working position. Match
+        // ranges still refer to different indices in this input slice.
+        let position = segments[0].get_position_marker().unwrap().clone();
+        segments[2].get_mut().set_position_marker(Some(position));
+        let matcher = StringParser::new("FOO", SyntaxKind::Keyword).to_matchable();
+        let dialect = Dialect::new();
+        let mut context = ParseContext::new(&dialect, IndentationConfig::default());
+        for idx in [0, 2] {
+            let result =
+                longest_match(&segments, std::slice::from_ref(&matcher), idx, &mut context)
+                    .unwrap()
+                    .0;
+            assert_eq!(result.span.start, idx);
+            assert_eq!(result.span.end, idx + 1);
+        }
+    }
 
     #[test]
     fn greedy_match_is_not_reused_with_different_inherited_terminators() {

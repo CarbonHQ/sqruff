@@ -519,12 +519,30 @@ impl MatchableTrait for Bracketed {
         }
 
         let indent_idx = start_match.span.end;
+        let mut insert_segments = vec![(indent_idx, SyntaxKind::Indent)];
         let mut child_matches = vec![start_match];
         if content_match.span.start != content_match.span.end {
             if content_match.matched.is_some() {
                 child_matches.push(content_match);
             } else {
                 child_matches.append(&mut content_match.child_matches);
+                // Preserve internal scopes from transparent content grammars.
+                // The brackets already indent the first item, so its leading
+                // implicit scope is redundant. Remove its matching dedent,
+                // preserving any independent scopes later in the content.
+                if content_match.insert_segments.first()
+                    == Some(&(content_start, SyntaxKind::Implicit))
+                {
+                    let mut balance = 0;
+                    if let Some(end) = content_match.insert_segments.iter().position(|(_, kind)| {
+                        balance += kind.indent_val();
+                        balance == 0
+                    }) {
+                        content_match.insert_segments.remove(end);
+                        content_match.insert_segments.remove(0);
+                    }
+                }
+                insert_segments.append(&mut content_match.insert_segments);
             }
         }
         if end_idx > gap_start {
@@ -550,16 +568,14 @@ impl MatchableTrait for Bracketed {
 
         let end_span = end_match.span;
         child_matches.push(end_match);
+        insert_segments.push((end_span.start, SyntaxKind::Dedent));
         let result = MatchResult {
             span: Span {
                 start: idx,
                 end: end_span.end,
             },
             matched: None,
-            insert_segments: vec![
-                (indent_idx, SyntaxKind::Indent),
-                (end_span.start, SyntaxKind::Dedent),
-            ],
+            insert_segments,
             child_matches,
         };
         Ok(if bracket_persists {

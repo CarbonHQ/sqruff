@@ -1,0 +1,184 @@
+rule: LT05
+
+test_join_relation_alias:
+  roundtrip: true
+  fail_str: |
+    select *
+    from
+      instrument_value
+      violet_instrument_value;
+  fix_str: |
+    select *
+    from
+      instrument_value violet_instrument_value;
+  configs:
+    core:
+      dialect: postgres
+      max_line_length: 120
+
+test_join_explicit_relation_alias:
+  roundtrip: true
+  fail_str: |
+    select *
+    from
+      instrument_value
+      as violet_instrument_value;
+  fix_str: |
+    select *
+    from
+      instrument_value as violet_instrument_value;
+  configs:
+    core:
+      dialect: postgres
+      max_line_length: 120
+
+test_long_pair_stays_wrapped:
+  pass_str: |
+    select *
+    from
+      instrument_value
+      violet_instrument_value;
+  configs:
+    core:
+      dialect: postgres
+      max_line_length: 26
+
+test_semicolon_counts_toward_width:
+  pass_str: |
+    select *
+    from
+      instrument_value
+      violet_instrument_value;
+  configs:
+    core:
+      dialect: postgres
+      max_line_length: 42
+      # Two-space indent + table + space + alias is 42; the semicolon is 43.
+
+test_comment_boundary_is_preserved:
+  pass_str: |
+    select *
+    from
+      instrument_value -- keep this line boundary
+      violet_instrument_value;
+  configs:
+    core:
+      dialect: postgres
+
+test_alias_line_directive_is_preserved:
+  pass_str: |
+    select *
+    from
+      instrument_value
+      violet_instrument_value -- keep comment placement
+    ;
+  configs:
+    core:
+      dialect: postgres
+
+test_select_alias_continuation_is_preserved:
+  pass_str: |
+    select
+      expression
+        as computed
+    from t;
+  configs:
+    core:
+      dialect: postgres
+
+test_derived_relation_preserves_query_breaks:
+  roundtrip: true
+  fail_str: |
+    select *
+    from (
+      select 1
+    )
+    as derived;
+  fix_str: |
+    select *
+    from (
+      select 1
+    ) as derived;
+  configs:
+    core:
+      dialect: postgres
+
+test_unlimited_line_length_preserves_layout:
+  pass_str: |
+    select *
+    from
+      instrument_value
+      violet_instrument_value;
+  configs:
+    core:
+      dialect: postgres
+      max_line_length: 0
+
+test_update_target_alias:
+  roundtrip: true
+  fail_str: |
+    update target_table
+      target_alias
+    set value = 1;
+  fix_str: |
+    update target_table target_alias
+    set value = 1;
+  configs:
+    core:
+      dialect: postgres
+
+test_delete_target_alias:
+  roundtrip: true
+  fail_str: |
+    delete from target_table
+      as target_alias
+    where target_alias.id = 1;
+  fix_str: |
+    delete from target_table as target_alias
+    where target_alias.id = 1;
+  configs:
+    core:
+      dialect: postgres
+
+test_merge_target_alias:
+  roundtrip: true
+  fail_str: |
+    merge into target_table
+      target_alias
+    using source_table source_alias on target_alias.id = source_alias.id
+    when matched then delete;
+  fix_str: |
+    merge into target_table target_alias
+    using source_table source_alias on target_alias.id = source_alias.id
+    when matched then delete;
+  configs:
+    core:
+      dialect: postgres
+
+test_explicit_strict_alias_layout_is_preserved:
+  pass_str: |
+    select *
+    from
+      instrument_value
+      violet_instrument_value;
+  configs:
+    core:
+      dialect: postgres
+    layout:
+      type:
+        alias_expression:
+          line_position: leading:strict
+
+test_explicit_alone_alias_layout_is_preserved:
+  pass_str: |
+    select *
+    from
+      instrument_value
+      violet_instrument_value;
+  configs:
+    core:
+      dialect: postgres
+    layout:
+      type:
+        alias_expression:
+          line_position: alone
