@@ -92,6 +92,35 @@ The retained changes address SQL found in CarbonHQ's PostgreSQL monorepo:
 - Honor `ignore_words` and `ignore_words_regex` for datatype capitalization
   (CP05), matching the other capitalization rules.
 
+`source_line_breaks = ignore` makes the fixed layout depend only on tokens,
+comments and blank lines, so the same SQL formats the same way however it was
+wrapped. It is off by default; `preserve` keeps the behaviour described above.
+
+- Before fixing, every line break that is neither a blank line nor required by
+  a comment is joined. A bracket that still has to span lines because of such a
+  break is expanded in full.
+- The layout is then built in stages: clause and list structure first, then
+  indentation, then wrapping of lines that are still too long. Wrapping earlier
+  leaves breaks that the later structure makes unnecessary.
+- LT16 (`layout.multiline_groups`) finishes groups that span lines: every item
+  of a comma-separated list with a multi-line item, and every branch of a
+  multi-line `CASE`, starts its own line.
+- Comment lines take the indentation of the next code line, and operators and
+  commas are never moved across a comment, so tokens keep their order.
+- A line with no other break point may break where an implicit indent starts.
+  `CREATE TRIGGER`, `CREATE INDEX` and `ALTER TABLE` actions have indentation
+  scopes so their long forms can wrap. In `preserve` mode this indents an
+  existing `ALTER TABLE` action continuation line.
+- `trailing_comments = keep` leaves a trailing comment on its line, does not
+  count its width, and wraps only the code before it.
+- LT07 reports every CTE closing bracket in one pass, in document order. It
+  previously fixed one per pass in hash order, so results could differ between
+  runs.
+
+`crates/lib/examples/canon.rs` checks a set of files for this property: it
+formats each file as written and with every token on its own line, and reports
+any difference or any output that is not stable after one pass.
+
 Regression cases cover parsing, expected formatting, and second-pass stability,
 including `implicit_indents = forbid`, `allow`, and `require`. Upstream already
 includes the earlier VARIADIC boundary fix and faster depth-map lookups; those

@@ -1,4 +1,4 @@
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 use sqruff_lib_core::dialects::syntax::{SyntaxKind, SyntaxSet};
 use sqruff_lib_core::lint_fix::LintFix;
 use sqruff_lib_core::parser::segments::{ErasedSegment, SegmentBuilder};
@@ -59,7 +59,8 @@ SELECT * FROM zoo
             .segment()
             .children_where(|seg| seg.is_type(SyntaxKind::CommonTableExpression));
 
-        let mut cte_end_brackets = HashSet::new();
+        // Document order keeps the result independent of hash iteration order.
+        let mut cte_end_brackets = Vec::new();
         for cte in segments.iterate_segments() {
             let cte_bracketed = cte
                 .children_all()
@@ -83,9 +84,13 @@ SELECT * FROM zoo
                 if !spans_multiple_lines {
                     continue;
                 }
-                cte_end_brackets.insert(cte_end_bracket[0].clone());
+                cte_end_brackets.push(cte_end_bracket[0].clone());
             }
         }
+
+        // Every offending bracket is reported in one pass. Fixing one per pass
+        // could run out of fix passes on statements with many CTEs.
+        let mut results = Vec::new();
 
         for seg in cte_end_brackets {
             let mut contains_non_whitespace = false;
@@ -114,7 +119,7 @@ SELECT * FROM zoo
             }
 
             if contains_non_whitespace {
-                return vec![LintResult::new(
+                results.push(LintResult::new(
                     seg.clone().into(),
                     vec![LintFix::create_before(
                         seg,
@@ -122,11 +127,11 @@ SELECT * FROM zoo
                     )],
                     None,
                     None,
-                )];
+                ));
             }
         }
 
-        Vec::new()
+        results
     }
 
     fn is_fix_compatible(&self) -> bool {

@@ -59,6 +59,7 @@ The following rules are available in this create. This list is generated from th
 | LT13 | [layout.start_of_file](#layoutstart_of_file) | Files must not begin with newlines or whitespace. |  |
 | LT14 | [layout.keyword_newline](#layoutkeyword_newline) | Keyword clause newline enforcement. |  |
 | LT15 | [layout.newlines](#layoutnewlines) | Too many consecutive blank lines. |  |
+| LT16 | [layout.multiline_groups](#layoutmultiline_groups) | Groups spanning several lines should break at every boundary. |  |
 | OR01 | [oracle.empty_batch](#oracleempty_batch) | Remove empty batches. |  |
 | PG01 | [postgres.excessive_locks](#postgresexcessive_locks) | Avoid excessive locks in PostgreSQL DDL statements. |  |
 | PG02 | [postgres.not_valid_foreign_key](#postgresnot_valid_foreign_key) | Create PostgreSQL foreign keys as NOT VALID before validating separately. |  |
@@ -2251,6 +2252,56 @@ file can satisfy both: the minimum inserts blank lines and the maximum deletes
 them straight back, so `sqruff fix` alternates between the two results on every
 run instead of converging. Where the cap changes what would otherwise be
 reported, a warning is emitted naming both values.
+
+### layout.multiline_groups
+
+Groups spanning several lines should break at every boundary.
+
+**Code:** `LT16`
+
+**Groups:** `all`, `layout`
+
+**Fixable:** Yes
+Only active with `source_line_breaks = ignore`.
+
+**Anti-pattern**
+
+A list whose items span several lines keeps some of them on a shared line,
+and a multi-line `CASE` keeps its first branch on the `CASE` line.
+
+```sql
+WITH a AS (
+    SELECT 1
+), b AS (
+    SELECT 2
+)
+
+SELECT
+    CASE WHEN x = 1 THEN 'one' -- first
+        ELSE 'other'
+    END
+FROM a
+```
+
+**Best practice**
+
+Start every item of such a list, and every branch of such a `CASE`, on its own line.
+
+```sql
+WITH a AS (
+    SELECT 1
+),
+b AS (
+    SELECT 2
+)
+
+SELECT
+    CASE
+        WHEN x = 1 THEN 'one' -- first
+        ELSE 'other'
+    END
+FROM a
+```
 
 ### oracle.empty_batch
 

@@ -182,8 +182,40 @@ impl Linter {
         });
         let mut tables = Tables::default();
         tables.layout = layout;
+
+        if fix && linter.ignores_source_line_breaks() {
+            let joined = linter.join_source_lines(sql);
+            let parsed = linter.parse_string_with_config(&tables, &joined, filename.clone())?;
+
+            // Errors are reported against the source as written, so a source
+            // that does not parse is linted without joining its lines.
+            if parsed.violations.is_empty() {
+                return linter.lint_parsed(&tables, parsed, fix);
+            }
+        }
+
         let parsed = linter.parse_string_with_config(&tables, sql, filename)?;
         linter.lint_parsed(&tables, parsed, fix)
+    }
+
+    fn ignores_source_line_breaks(&self) -> bool {
+        self.config
+            .get("source_line_breaks", "core")
+            .as_string()
+            .is_some_and(|value| value == "ignore")
+    }
+
+    /// Join every source line break that is neither a blank line nor required
+    /// by a comment. Sources that do not lex cleanly are returned as they are,
+    /// so the parser reports the error at its position.
+    pub fn join_source_lines(&self, sql: &str) -> String {
+        let tables = Tables::default();
+        let (tokens, errors) = self.config.get_dialect().lexer().lex(&tables, sql);
+        if !errors.is_empty() {
+            return sql.to_owned();
+        }
+
+        super::source_lines::join_source_lines(&tokens)
     }
 
     /// ignorer is an optional argument that takes in a function that returns a bool based on the
@@ -703,10 +735,23 @@ impl Linter {
         fix: bool,
     ) -> Result<(ErasedSegment, Option<IgnoreMask>, Vec<SQLLintError>), SQLFluffUserError> {
         let mut initial_violations = Vec::new();
-        let phases: &[_] = if fix {
-            &[LintPhase::Main, LintPhase::Post]
+        // When source line breaks are ignored, the layout is built in stages:
+        // rules that place clauses and list items on their own lines settle
+        // first, then indentation, then wrapping of lines that are still too
+        // long. Indenting or wrapping earlier would add breaks that the later
+        // structure makes unnecessary, and nothing removes them again.
+        let stages_layout = fix && self.ignores_source_line_breaks();
+        let phases: &[(LintPhase, &[&str])] = if stages_layout {
+            &[
+                (LintPhase::Main, &["LT02", "LT05"]),
+                (LintPhase::Main, &["LT05"]),
+                (LintPhase::Main, &[]),
+                (LintPhase::Post, &[]),
+            ]
+        } else if fix {
+            &[(LintPhase::Main, &[]), (LintPhase::Post, &[])]
         } else {
-            &[LintPhase::Main]
+            &[(LintPhase::Main, &[])]
         };
         let mut previous_versions: HashSet<(SmolStr, bool)> =
             [(tree.raw().to_smolstr(), false)].into_iter().collect();
@@ -763,7 +808,7 @@ impl Linter {
 
         let mut anchor_info = HashMap::default();
 
-        for phase in phases {
+        for (phase_index, (phase, deferred_rules)) in phases.iter().enumerate() {
             let loop_limit = if *phase == LintPhase::Main {
                 loop_limit
             } else {
@@ -775,6 +820,7 @@ impl Linter {
                 filtered_rules = rules
                     .iter()
                     .filter(|rule| rule.lint_phase() == *phase)
+                    .filter(|rule| !deferred_rules.contains(&rule.code()))
                     .cloned()
                     .collect_vec();
                 &filtered_rules
@@ -783,10 +829,10 @@ impl Linter {
             };
 
             for loop_ in 0..loop_limit {
-                let is_first_linter_pass = *phase == phases[0] && loop_ == 0;
+                let is_first_linter_pass = phase_index == 0 && loop_ == 0;
                 let mut changed = false;
 
-                if is_first_linter_pass {
+                if is_first_linter_pass && !stages_layout {
                     rules_this_phase = self.rules()?;
                 }
 
@@ -1713,6 +1759,60 @@ END
         let parser: Parser = (&config).into();
 
         assert_eq!(parser.max_parse_depth(), 0);
+    }
+
+    fn line_joining_linter() -> Linter {
+        let config = FluffConfig::from_source(
+            "[sqruff]\ndialect = postgres\nrules = layout\nsource_line_breaks = ignore\n",
+            None,
+        );
+
+        Linter::new(config, None, None, true).unwrap()
+    }
+
+    #[test]
+    fn join_source_lines_keeps_blank_lines_comments_and_literals() {
+        let linter = line_joining_linter();
+        let source =
+            "select\n  a, -- first\n  $$one\ntwo$$\nfrom\n  t;\n\n\n-- note\nselect\n  1;\n";
+
+        assert_eq!(
+            linter.join_source_lines(source),
+            "select a, -- first\n$$one\ntwo$$ from t;\n\n-- note\nselect 1;\n"
+        );
+    }
+
+    #[test]
+    fn join_source_lines_expands_brackets_that_must_span_lines() {
+        let linter = line_joining_linter();
+        let source = "insert into t (a, b)\nvalues (f(1,\n2), 'x', -- why\n'y'), (3, 4);\n";
+
+        assert_eq!(
+            linter.join_source_lines(source),
+            "insert into t (a, b) values (\nf(1, 2),\n'x', -- why\n'y'\n), (3, 4);\n"
+        );
+    }
+
+    #[test]
+    fn ignored_source_line_breaks_give_one_layout_for_any_input_layout() {
+        let linter = line_joining_linter();
+        let wrapped = "create table t\n(\n  a integer,\n  b text\n);\n\nselect\n  a\nfrom\n  t\nwhere\n  b = 'x';\n";
+        let inline = "create table t (a integer, b text);\n\nselect a from t where b = 'x';\n";
+
+        let from_wrapped = linter
+            .lint_string(wrapped, None, true)
+            .unwrap()
+            .fix_string();
+        let from_inline = linter.lint_string(inline, None, true).unwrap().fix_string();
+
+        assert_eq!(from_wrapped, from_inline);
+        assert_eq!(
+            linter
+                .lint_string(&from_inline, None, true)
+                .unwrap()
+                .fix_string(),
+            from_inline
+        );
     }
 
     #[test]

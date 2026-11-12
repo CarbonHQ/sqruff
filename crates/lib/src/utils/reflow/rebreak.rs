@@ -389,6 +389,7 @@ pub fn rebreak_sequence(
     root_segment: &ErasedSegment,
     indent_unit: IndentUnit,
     tab_space_size: usize,
+    keeps_token_order: bool,
 ) -> (ReflowSequenceType, Vec<LintResult>) {
     let mut lint_results = Vec::new();
     let mut fixes = Vec::new();
@@ -454,8 +455,14 @@ pub fn rebreak_sequence(
                 attached_description = Some(desc);
             }
 
-            if !has_newline_after {
+            let has_comment_after = !(loc.next.adj_pt_idx == loc.next.pre_code_pt_idx
+                && elem_buff[loc.next.newline_pt_idx as usize].num_newlines() == 1);
+
+            if !has_newline_after || (keeps_token_order && has_comment_after) {
                 // Strict mid-line case: insert a newline before the operator.
+                // The same applies when a comment follows the operator and
+                // tokens must keep their order: the operator starts a line
+                // and the comment stays behind it.
                 let (new_results, prev_point) = prev_point.indent_to(
                     tables,
                     &deduce_line_indent(
@@ -611,6 +618,10 @@ pub fn rebreak_sequence(
                 elem_buff[loc.next.adj_pt_idx as usize] = next_point.into();
 
                 new_results
+            } else if keeps_token_order {
+                // A comment sits between the previous code and this target.
+                // Making the target trailing would move it across the comment.
+                continue;
             } else {
                 let Some(lead_create_anchor) =
                     first_create_anchor(&elem_buff, loc.prev.pre_code_pt_idx..=loc.prev.adj_pt_idx)

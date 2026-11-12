@@ -9,6 +9,7 @@ use crate::core::config::Value;
 use crate::core::rules::context::RuleContext;
 use crate::core::rules::crawlers::{Crawler, RootOnlyCrawler};
 use crate::core::rules::{Erased, ErasedRule, LintResult, Rule, RuleGroups, targets_templated};
+use crate::utils::reflow::reindent::TrailingComments;
 use crate::utils::reflow::sequence::ReflowSequence;
 
 #[derive(Debug, Default, Clone)]
@@ -80,6 +81,9 @@ FROM my_table
 
         let mut to_remove = HashSet::new();
 
+        let keeps_trailing_comments =
+            context.config.reflow().trailing_comments == TrailingComments::Keep;
+
         if self.ignore_comment_lines {
             let raw_segments = context.segment.get_raw_segments();
             for (res_idx, res) in enumerate(&results) {
@@ -91,6 +95,12 @@ FROM my_table
                         .is_type(SyntaxKind::InlineComment)
                 {
                     to_remove.insert(res_idx);
+                    continue;
+                }
+
+                // A kept trailing comment is already excluded from the measured
+                // width, so its line is only reported when the code is too long.
+                if keeps_trailing_comments {
                     continue;
                 }
 

@@ -12,8 +12,8 @@ use super::depth_map::DepthMap;
 use super::elements::{ReflowBlock, ReflowElement, ReflowPoint, ReflowSequenceType};
 use super::rebreak::{LinePosition, rebreak_keywords_sequence, rebreak_sequence};
 use super::reindent::{
-    IndentationExclusions, coalesce_relation_aliases, construct_single_indent, lint_indent_points,
-    lint_line_length, rendered_column,
+    IndentationExclusions, LongLineOptions, coalesce_relation_aliases, construct_single_indent,
+    lint_indent_points, lint_line_length, rendered_column,
 };
 use crate::core::config::FluffConfig;
 use crate::core::rules::LintResult;
@@ -586,6 +586,7 @@ impl<'a, 'b> ReflowSequence<'a, 'b> {
                 self.root_segment,
                 self.reflow_config.indent_unit,
                 self.reflow_config.tab_space_size,
+                self.reflow_config.ignores_source_line_breaks,
             )
         } else {
             rebreak_keywords_sequence(
@@ -700,6 +701,7 @@ impl<'a, 'b> ReflowSequence<'a, 'b> {
             IndentationExclusions {
                 indentation: &self.reflow_config.skip_indentation_in,
                 implicit_indents: &self.reflow_config.skip_implicit_indents_in,
+                aligns_comment_lines: self.reflow_config.ignores_source_line_breaks,
             },
             self.reflow_config.implicit_indents,
             self.reflow_config.ignore_comment_lines,
@@ -741,8 +743,11 @@ impl<'a, 'b> ReflowSequence<'a, 'b> {
             self.root_segment,
             &single_indent,
             self.reflow_config.max_line_length,
-            self.reflow_config.implicit_indents,
-            self.reflow_config.trailing_comments,
+            LongLineOptions {
+                implicit_indents: self.reflow_config.implicit_indents,
+                trailing_comments: self.reflow_config.trailing_comments,
+                falls_back_to_implicit_indents: self.reflow_config.ignores_source_line_breaks,
+            },
         );
 
         ReflowSequence {

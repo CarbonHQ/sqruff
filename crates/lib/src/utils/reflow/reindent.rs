@@ -1083,6 +1083,7 @@ fn lint_line_starting_indent(
     single_indent: &str,
     forced_indents: &[usize],
     starting_indent_compensation_spaces: usize,
+    aligns_comment_lines: bool,
 ) -> Vec<LintResult> {
     let indent_points = &indent_line.indent_points;
     // Set up the default anchor
@@ -1105,15 +1106,20 @@ fn lint_line_starting_indent(
     }
 
     if initial_point_idx > 0 && initial_point_idx < elements.len() - 1 {
-        if elements[initial_point_idx + 1].class_types().intersects(
-            const {
-                &SyntaxSet::new(&[
-                    SyntaxKind::Comment,
-                    SyntaxKind::BlockComment,
-                    SyntaxKind::InlineComment,
-                ])
-            },
-        ) {
+        // A comment line may normally keep the indent of the line before it.
+        // That keeps whatever the source had, so it is not allowed when the
+        // layout must not depend on the source.
+        if !aligns_comment_lines
+            && elements[initial_point_idx + 1].class_types().intersects(
+                const {
+                    &SyntaxSet::new(&[
+                        SyntaxKind::Comment,
+                        SyntaxKind::BlockComment,
+                        SyntaxKind::InlineComment,
+                    ])
+                },
+            )
+        {
             let last_indent =
                 deduce_line_current_indent(elements, indent_points[0].last_line_break_idx);
 
@@ -1437,6 +1443,7 @@ struct LineIndentContext<'a> {
     imbalanced_indent_locs: &'a [usize],
     starting_indent_compensation_spaces: usize,
     implicit_indent_locs: &'a HashSet<usize>,
+    aligns_comment_lines: bool,
 }
 
 fn lint_line_buffer_indents(
@@ -1455,6 +1462,7 @@ fn lint_line_buffer_indents(
         context.single_indent,
         forced_indents,
         context.starting_indent_compensation_spaces,
+        context.aligns_comment_lines,
     );
     results.append(&mut new_results);
 
@@ -1531,6 +1539,9 @@ fn convert_newlines_to_spaces(
 pub struct IndentationExclusions<'a> {
     pub indentation: &'a SyntaxSet,
     pub implicit_indents: &'a SyntaxSet,
+    /// Indent comment lines like the code line that follows them, without
+    /// accepting the indent of the line before.
+    pub aligns_comment_lines: bool,
 }
 
 pub fn lint_indent_points(
@@ -1603,6 +1614,7 @@ pub fn lint_indent_points(
                 imbalanced_indent_locs: &imbalanced_indent_locs,
                 starting_indent_compensation_spaces,
                 implicit_indent_locs: &implicit_indent_locs,
+                aligns_comment_lines: exclusions.aligns_comment_lines,
             },
         );
 
@@ -1794,6 +1806,7 @@ fn match_indents(
     rebreak_priorities: HashMap<usize, usize>,
     newline_idx: usize,
     implicit_indents: ImplicitIndents,
+    falls_back_to_implicit_indents: bool,
 ) -> MatchedIndentsType {
     let mut balance = 0;
     let mut matched_indents: MatchedIndentsType = HashMap::new();
@@ -1846,6 +1859,7 @@ fn match_indents(
     });
 
     if implicit_indents != ImplicitIndents::Forbid {
+        let mut implicit_only = Vec::new();
         let keys: Vec<_> = matched_indents.keys().copied().collect();
         for indent_level in keys {
             // Fractional levels are operator/comma break opportunities. An
@@ -1864,9 +1878,17 @@ fn match_indents(
                 .copied()
                 .collect();
 
-            if major_points.is_empty() {
-                matched_indents.remove(&indent_level);
+            if major_points.is_empty()
+                && let Some(points) = matched_indents.remove(&indent_level)
+            {
+                implicit_only.push((indent_level, points));
             }
+        }
+
+        // A line with no other place to break may still break where an
+        // implicit indent starts: the line break then makes that indent real.
+        if falls_back_to_implicit_indents && matched_indents.is_empty() {
+            matched_indents.extend(implicit_only);
         }
     }
 
@@ -1879,6 +1901,9 @@ pub enum TrailingComments {
     #[default]
     Before,
     After,
+    /// Leave the comment at the end of its line. Its width is not counted,
+    /// and the code before it wraps like any other line that is too long.
+    Keep,
 }
 
 fn fix_long_line_with_comment(
@@ -2278,15 +2303,29 @@ pub(crate) fn coalesce_relation_aliases(
     updated.map(|elements| (elements, results))
 }
 
+/// How lines that exceed the limit are wrapped.
+#[derive(Clone, Copy, Debug)]
+pub struct LongLineOptions {
+    pub implicit_indents: ImplicitIndents,
+    pub trailing_comments: TrailingComments,
+    /// Break at an implicit indent when a line offers no other break point.
+    pub falls_back_to_implicit_indents: bool,
+}
+
 pub fn lint_line_length(
     tables: &Tables,
     elements: &ReflowSequenceType,
     root_segment: &ErasedSegment,
     single_indent: &str,
     line_length_limit: usize,
-    implicit_indents: ImplicitIndents,
-    trailing_comments: TrailingComments,
+    options: LongLineOptions,
 ) -> (ReflowSequenceType, Vec<LintResult>) {
+    let LongLineOptions {
+        implicit_indents,
+        trailing_comments,
+        falls_back_to_implicit_indents,
+    } = options;
+
     if line_length_limit == 0 {
         return (elements.clone(), Vec::new());
     }
@@ -2323,7 +2362,23 @@ pub fn lint_line_length(
             "".into()
         };
 
-        let char_len = source_char_len(&line_buffer, &tables.layout);
+        let ends_with_comment = line_buffer.len() > 1
+            && line_buffer
+                .last()
+                .unwrap()
+                .segments()
+                .last()
+                .unwrap()
+                .is_type(SyntaxKind::InlineComment);
+        let keeps_comment = ends_with_comment && trailing_comments == TrailingComments::Keep;
+        // A kept comment and the spacing before it are not part of the measured line.
+        let measured = if keeps_comment {
+            &line_buffer[..line_buffer.len() - 2]
+        } else {
+            &line_buffer[..]
+        };
+
+        let char_len = source_char_len(measured, &tables.layout);
         let line_len = tables.layout.base_indent + tables.layout.width(&current_indent) + char_len;
 
         let first_seg = line_buffer[0].segments()[0].clone();
@@ -2341,20 +2396,25 @@ pub fn lint_line_length(
             let spans = identify_rebreak_spans(&combined_elements, root_segment);
             let rebreak_priorities = rebreak_priorities(spans, combined_elements.len());
 
-            let matched_indents =
-                match_indents(line_elements, rebreak_priorities, i, implicit_indents);
+            let mut matched_indents = match_indents(
+                line_elements,
+                rebreak_priorities,
+                i,
+                implicit_indents,
+                falls_back_to_implicit_indents,
+            );
+
+            if keeps_comment {
+                // Breaking directly before the comment would move it to its own line.
+                matched_indents.retain(|_balance, points| {
+                    points.retain(|&point| point + 2 != i);
+                    !points.is_empty()
+                });
+            }
 
             let desc = format!("Line is too long ({line_len} > {line_length_limit}).");
 
-            if line_buffer.len() > 1
-                && line_buffer
-                    .last()
-                    .unwrap()
-                    .segments()
-                    .last()
-                    .unwrap()
-                    .is_type(SyntaxKind::InlineComment)
-            {
+            if ends_with_comment && !keeps_comment {
                 (elem_buffer, fixes) = fix_long_line_with_comment(
                     tables,
                     &line_buffer,

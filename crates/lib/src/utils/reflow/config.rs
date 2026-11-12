@@ -192,6 +192,7 @@ pub struct ReflowConfig {
     pub(crate) implicit_indents: ImplicitIndents,
     pub(crate) trailing_comments: TrailingComments,
     pub(crate) ignore_comment_lines: bool,
+    pub(crate) ignores_source_line_breaks: bool,
 }
 
 impl Default for ReflowConfig {
@@ -208,6 +209,7 @@ impl Default for ReflowConfig {
             implicit_indents: Default::default(),
             trailing_comments: Default::default(),
             ignore_comment_lines: false,
+            ignores_source_line_breaks: false,
         }
     }
 }
@@ -409,6 +411,11 @@ impl ReflowConfig {
             ignore_comment_lines: config.raw["indentation"]["ignore_comment_lines"]
                 .as_bool()
                 .unwrap(),
+            ignores_source_line_breaks: config.raw["core"]
+                .as_map()
+                .and_then(|core| core.get("source_line_breaks"))
+                .and_then(Value::as_string)
+                .is_some_and(|value| value == "ignore"),
         }
     }
 }
