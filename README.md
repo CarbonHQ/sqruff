@@ -102,6 +102,11 @@ wrapped. It is off by default; `preserve` keeps the behaviour described above.
 - The layout is then built in stages: clause and list structure first, then
   indentation, then wrapping of lines that are still too long. Wrapping earlier
   leaves breaks that the later structure makes unnecessary.
+- Top-level statements are laid out independently and in parallel, followed by
+  one pass over the whole file for what lies between them. Each statement then
+  only pays for the passes it needs: long lines wrap one nesting level per
+  pass, and one deeply nested statement no longer makes every pass re-check the
+  whole file. The wrapping stage may use four times `runaway_limit`.
 - LT16 (`layout.multiline_groups`) finishes groups that span lines: every item
   of a comma-separated list with a multi-line item, and every branch of a
   multi-line `CASE`, starts its own line.

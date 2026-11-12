@@ -29,6 +29,9 @@ use sqruff_lib_core::parser::segments::{ErasedSegment, Tables};
 use sqruff_lib_core::templaters::TemplatedFile;
 use sqruff_lib_core::value::Value;
 
+/// How many times the pass limit the wrapping stage may use.
+const WRAPPING_PASS_FACTOR: usize = 4;
+
 pub struct Linter {
     config: FluffConfig,
     formatter: Option<Arc<dyn Formatter>>,
@@ -184,8 +187,22 @@ impl Linter {
         tables.layout = layout;
 
         if fix && linter.ignores_source_line_breaks() {
-            let joined = linter.join_source_lines(sql);
-            let parsed = linter.parse_string_with_config(&tables, &joined, filename.clone())?;
+            let joined = linter.joined_source(sql);
+
+            // Statements do not influence each other's layout, so each one is
+            // laid out on its own and only pays for the passes it needs. One
+            // more pass over the whole file then settles what lies between them.
+            if let Some(statements) = linter.fix_statements(&joined, &tables.layout) {
+                let parsed =
+                    linter.parse_string_with_config(&tables, &statements, filename.clone())?;
+
+                if parsed.violations.is_empty() {
+                    return linter.lint_parsed_in_stages(&tables, parsed, fix, false);
+                }
+            }
+
+            let parsed =
+                linter.parse_string_with_config(&tables, &joined.text, filename.clone())?;
 
             // Errors are reported against the source as written, so a source
             // that does not parse is linted without joining its lines.
@@ -209,13 +226,70 @@ impl Linter {
     /// by a comment. Sources that do not lex cleanly are returned as they are,
     /// so the parser reports the error at its position.
     pub fn join_source_lines(&self, sql: &str) -> String {
+        self.joined_source(sql).text
+    }
+
+    fn joined_source(&self, sql: &str) -> super::source_lines::JoinedSource {
         let tables = Tables::default();
         let (tokens, errors) = self.config.get_dialect().lexer().lex(&tables, sql);
         if !errors.is_empty() {
-            return sql.to_owned();
+            return super::source_lines::JoinedSource {
+                text: sql.to_owned(),
+                statement_ends: Vec::new(),
+            };
         }
 
         super::source_lines::join_source_lines(&tokens)
+    }
+
+    /// Fix each top-level statement of a joined source on its own and put the
+    /// results back together with the whitespace that separated them.
+    /// Returns `None` for a single statement, or when any piece does not parse
+    /// by itself, as the parts of a compound statement would not.
+    fn fix_statements(
+        &self,
+        joined: &super::source_lines::JoinedSource,
+        layout: &sqruff_lib_core::parser::segments::LayoutContext,
+    ) -> Option<String> {
+        if joined.statement_ends.len() < 2 {
+            return None;
+        }
+
+        let text = joined.text.as_str();
+        let mut pieces = Vec::with_capacity(joined.statement_ends.len() + 1);
+        let mut start = 0;
+        for &end in &joined.statement_ends {
+            pieces.push(&text[start..end]);
+            start = end;
+        }
+        pieces.push(&text[start..]);
+
+        let fixed: Vec<Option<String>> = pieces
+            .par_iter()
+            .map(|piece| {
+                let statement = piece.trim();
+                if statement.is_empty() {
+                    return Some((*piece).to_owned());
+                }
+
+                let leading = &piece[..piece.len() - piece.trim_start().len()];
+                let trailing = &piece[piece.trim_end().len()..];
+                let mut tables = Tables::default();
+                tables.layout = layout.clone();
+                let parsed = self
+                    .parse_string_with_config(&tables, statement, None)
+                    .ok()?;
+                if !parsed.violations.is_empty() {
+                    return None;
+                }
+
+                let fixed = self.lint_parsed(&tables, parsed, true).ok()?.fix_string();
+
+                Some(format!("{leading}{}{trailing}", fixed.trim()))
+            })
+            .collect();
+
+        fixed.into_iter().collect()
     }
 
     /// ignorer is an optional argument that takes in a function that returns a bool based on the
@@ -616,6 +690,18 @@ impl Linter {
         parsed_string: ParsedString,
         fix: bool,
     ) -> Result<LintedFile, SQLFluffUserError> {
+        self.lint_parsed_in_stages(tables, parsed_string, fix, true)
+    }
+
+    /// `stages` is false for a source whose statements are already laid out,
+    /// where a single ordinary pass is enough.
+    fn lint_parsed_in_stages(
+        &self,
+        tables: &Tables,
+        parsed_string: ParsedString,
+        fix: bool,
+        stages: bool,
+    ) -> Result<LintedFile, SQLFluffUserError> {
         let tree_is_unparsable = |tree: &ErasedSegment| {
             tree.is_type(SyntaxKind::Unparsable)
                 || tree.descendant_type_set().contains(SyntaxKind::Unparsable)
@@ -651,7 +737,7 @@ impl Linter {
             let root = variants.remove(root_index);
             let tree = root.tree.expect("Root variant must have a parse tree");
             let (fixed_tree, ignore_mask, linting_errors) =
-                self.lint_fix_parsed(tables, tree, &root.templated_file, fix)?;
+                self.lint_fix_parsed_in_stages(tables, tree, &root.templated_file, fix, stages)?;
             let mut violations = root.violations;
             violations.extend(linting_errors.into_iter().map_into());
             if fix {
@@ -663,8 +749,13 @@ impl Linter {
 
             for alternate in variants {
                 if let Some(tree) = alternate.tree {
-                    let (fixed_tree, _, linting_errors) =
-                        self.lint_fix_parsed(tables, tree, &alternate.templated_file, fix)?;
+                    let (fixed_tree, _, linting_errors) = self.lint_fix_parsed_in_stages(
+                        tables,
+                        tree,
+                        &alternate.templated_file,
+                        fix,
+                        stages,
+                    )?;
                     violations.extend(linting_errors.into_iter().map_into());
                     if fix {
                         source_patch_buffers.push(LintedFile::generate_source_patches(
@@ -730,9 +821,20 @@ impl Linter {
     pub fn lint_fix_parsed(
         &self,
         tables: &Tables,
+        tree: ErasedSegment,
+        templated_file: &TemplatedFile,
+        fix: bool,
+    ) -> Result<(ErasedSegment, Option<IgnoreMask>, Vec<SQLLintError>), SQLFluffUserError> {
+        self.lint_fix_parsed_in_stages(tables, tree, templated_file, fix, true)
+    }
+
+    fn lint_fix_parsed_in_stages(
+        &self,
+        tables: &Tables,
         mut tree: ErasedSegment,
         templated_file: &TemplatedFile,
         fix: bool,
+        stages: bool,
     ) -> Result<(ErasedSegment, Option<IgnoreMask>, Vec<SQLLintError>), SQLFluffUserError> {
         let mut initial_violations = Vec::new();
         // When source line breaks are ignored, the layout is built in stages:
@@ -740,7 +842,7 @@ impl Linter {
         // first, then indentation, then wrapping of lines that are still too
         // long. Indenting or wrapping earlier would add breaks that the later
         // structure makes unnecessary, and nothing removes them again.
-        let stages_layout = fix && self.ignores_source_line_breaks();
+        let stages_layout = stages && fix && self.ignores_source_line_breaks();
         let phases: &[(LintPhase, &[&str])] = if stages_layout {
             &[
                 (LintPhase::Main, &["LT02", "LT05"]),
@@ -809,10 +911,14 @@ impl Linter {
         let mut anchor_info = HashMap::default();
 
         for (phase_index, (phase, deferred_rules)) in phases.iter().enumerate() {
-            let loop_limit = if *phase == LintPhase::Main {
-                loop_limit
-            } else {
+            let loop_limit = if *phase != LintPhase::Main {
                 2
+            } else if stages_layout && deferred_rules.is_empty() {
+                // Long lines wrap one nesting level per pass, so deeply nested
+                // statements need more passes than the other stages.
+                loop_limit * WRAPPING_PASS_FACTOR
+            } else {
+                loop_limit
             };
             let rules = self.rules()?;
             let filtered_rules;

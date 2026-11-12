@@ -246,3 +246,35 @@ where
 ",
     );
 }
+
+#[test]
+fn statements_are_laid_out_independently() {
+    assert_canonical(
+        "\
+select
+  1; -- stays with the first statement
+
+-- belongs to the second statement
+select
+  case
+    when a then 'first' -- why
+    else 'second'
+  end as commented
+from
+  t;
+
+select
+  2;
+",
+    );
+}
+
+#[test]
+fn deeply_nested_lines_wrap_until_they_fit() {
+    let linter = linter();
+    let nested = "select f1(f2(f3(f4(f5(f6(f7(f8(f9(f10(f11(f12(a_rather_long_column_name, another_rather_long_column_name, a_third_rather_long_column_name)))))))))))) from t;\n";
+    let fixed = fix(&linter, nested);
+
+    assert!(fixed.lines().all(|line| line.len() <= 80), "{fixed}");
+    assert_eq!(fix(&linter, &fixed), fixed);
+}

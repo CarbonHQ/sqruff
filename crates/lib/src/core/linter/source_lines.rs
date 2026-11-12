@@ -39,10 +39,18 @@ fn is_closing(raw: &str) -> bool {
     matches!(raw, ")" | "]")
 }
 
+/// A source with its line breaks joined.
+pub(crate) struct JoinedSource {
+    pub text: String,
+    /// Byte offsets in `text` just past each statement terminator outside any
+    /// bracket, including a comment that trails it on the same line.
+    pub statement_ends: Vec<usize>,
+}
+
 /// Join every line break that is neither a blank line nor required by a
 /// comment, expanding brackets that still have to span several lines.
 /// Token text, including multi-line literals and comments, is copied unchanged.
-pub(crate) fn join_source_lines(segments: &[ErasedSegment]) -> String {
+pub(crate) fn join_source_lines(segments: &[ErasedSegment]) -> JoinedSource {
     let mut tokens: Vec<Token<'_>> = Vec::new();
     let mut leading = String::new();
     let mut trailing = String::new();
@@ -130,6 +138,7 @@ pub(crate) fn join_source_lines(segments: &[ErasedSegment]) -> String {
     let is_expanded = |bracket: Option<usize>| bracket.is_some_and(|index| expanded[index]);
     let mut output = String::with_capacity(leading.len() + trailing.len() + tokens.len() * 8);
     output.push_str(&leading);
+    let mut statement_ends = Vec::new();
 
     for (index, token) in tokens.iter().enumerate() {
         let previous = index.checked_sub(1).map(|index| &tokens[index]);
@@ -151,8 +160,22 @@ pub(crate) fn join_source_lines(segments: &[ErasedSegment]) -> String {
         }
 
         output.push_str(token.raw);
+
+        let trails_terminator = stays_on_line
+            && previous.is_some_and(|previous| previous.raw == ";" && previous.bracket.is_none());
+        if trails_terminator {
+            // The comment belongs to the statement it follows.
+            statement_ends.pop();
+        }
+        if trails_terminator || (token.raw == ";" && token.bracket.is_none()) {
+            statement_ends.push(output.len());
+        }
     }
 
     output.push_str(&trailing);
-    output
+
+    JoinedSource {
+        text: output,
+        statement_ends,
+    }
 }
