@@ -19,6 +19,7 @@ tab_space_size = 2
 implicit_indents = allow
 indented_joins = True
 indented_ctes = True
+indented_on_contents = False
 trailing_comments = keep
 
 [sqruff:rules:layout.newlines]
@@ -32,10 +33,16 @@ single_target_policy = new_line
 line_position = trailing:attached
 
 [sqruff:layout:type:when_clause]
-line_position = leading
+line_position = leading:strict
 
 [sqruff:layout:type:else_clause]
-line_position = leading
+line_position = leading:strict
+
+[sqruff:layout:type:values_clause]
+keyword_line_position = alone
+
+[sqruff:layout:type:set_clause_list]
+keyword_line_position = alone
 
 [sqruff:layout:type:select_clause]
 keyword_line_position = leading
@@ -137,11 +144,14 @@ where
 }
 
 #[test]
-fn case_stays_inline_until_it_has_to_span_lines() {
+fn case_branches_take_their_own_lines() {
     assert_canonical(
         "\
 select
-  case when a then 'x' else 'y' end as short,
+  case
+    when a then 'x'
+    else 'y'
+  end as short,
   case
     when a then 'first' -- why
     else 'second'
@@ -156,12 +166,15 @@ from
 fn brackets_holding_a_comment_expand_in_full() {
     assert_canonical(
         "\
-insert into t (a, b, c) values (
-  1,
-  'x', -- reason
-  'y'
-),
-(2, 'p', 'q');
+insert into
+  t (a, b, c)
+values
+  (
+    1,
+    'x', -- reason
+    'y'
+  ),
+  (2, 'p', 'q');
 ",
     );
 }
@@ -190,9 +203,7 @@ fn trailing_comments_stay_and_only_the_code_is_wrapped() {
         "\
 select
   concat(
-    'a rather long string literal',
-    another_column_name,
-    'and one more literal'
+    'a rather long string literal', another_column_name, 'and one more literal'
   ), -- the comment stays on this line however long it is
   b
 from
@@ -226,7 +237,9 @@ create policy a_rather_long_policy_name on a_schema.a_rather_long_table_name
 using ((org_id = current_org()));
 
 alter table only a_schema.a_rather_long_table_name
-  add constraint a_rather_long_constraint_name unique (org_id, name);
+add constraint a_rather_long_constraint_name unique (org_id, name);
+
+alter table a_schema.a_table enable row level security;
 ",
     );
 }
@@ -277,4 +290,97 @@ fn deeply_nested_lines_wrap_until_they_fit() {
 
     assert!(fixed.lines().all(|line| line.len() <= 80), "{fixed}");
     assert_eq!(fix(&linter, &fixed), fixed);
+}
+
+#[test]
+fn clause_keywords_stand_alone() {
+    assert_canonical(
+        "\
+insert into
+  t (a, b)
+select
+  x,
+  y
+from
+  u
+on conflict (a) do update
+set
+  b = excluded.b
+where
+  t.b is distinct from excluded.b
+returning
+  a;
+
+update t
+set
+  a = 1,
+  b = 2
+where
+  id = 3;
+
+set
+  local datestyle = 'ISO, MDY';
+",
+    );
+}
+
+#[test]
+fn conditions_take_one_term_per_line() {
+    assert_canonical(
+        "\
+select
+  a
+from
+  t
+  inner join u
+    on u.id = t.id
+    and u.kind = t.kind
+  left join v on v.id = t.id
+where
+  a = 1
+  and (
+    b = 2
+    or c = 3
+  )
+  and d between 1 and 2;
+",
+    );
+}
+
+#[test]
+fn assignments_wrap_inside_their_value() {
+    assert_canonical(
+        "\
+update t
+set
+  a_rather_long_column_name = (
+    a_rather_long_column_name::jsonb || jsonb_build_object('key', 'value')
+  )::json,
+  b = case
+    when c then 1
+    else 2
+  end;
+",
+    );
+}
+
+#[test]
+fn table_columns_and_index_keys_wrap_differently() {
+    assert_canonical(
+        "\
+create table a_schema.a_rather_long_table_name (
+  id uuid not null,
+  a_rather_long_column_name text not null,
+  another_column integer
+);
+
+create table t (id uuid not null, name text not null);
+
+create index a_rather_long_index_name on a_schema.a_rather_long_table_name using btree (
+  id, a_rather_long_column_name, another_column
+)
+where
+  (another_column is not null);
+",
+    );
 }

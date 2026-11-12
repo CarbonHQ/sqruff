@@ -1,7 +1,7 @@
 use std::cmp::PartialEq;
 use std::str::FromStr;
 
-use sqruff_lib_core::dialects::syntax::SyntaxKind;
+use sqruff_lib_core::dialects::syntax::{SyntaxKind, SyntaxSet};
 use sqruff_lib_core::helpers::capitalize;
 use sqruff_lib_core::lint_fix::LintFix;
 use sqruff_lib_core::parser::segments::{ErasedSegment, Tables};
@@ -192,6 +192,7 @@ impl RebreakLocation {
 pub fn identify_rebreak_spans(
     element_buffer: &ReflowSequenceType,
     _root_segment: &ErasedSegment,
+    keeps_assignments_whole: bool,
 ) -> Vec<RebreakSpan> {
     let mut spans = Vec::new();
 
@@ -204,6 +205,26 @@ pub fn identify_rebreak_spans(
         let ReflowElement::Block(block) = elem else {
             continue;
         };
+
+        // The `=` of `SET column = value` is not a comparison to wrap at:
+        // the value wraps inside its own brackets or clauses instead.
+        if keeps_assignments_whole {
+            let stack = &block.depth_info().stack_class_types;
+            let assigns = stack
+                .iter()
+                .rposition(|types| types.contains(SyntaxKind::ComparisonOperator))
+                .and_then(|operator| operator.checked_sub(1))
+                .is_some_and(|parent| {
+                    stack[parent].intersects(
+                        const {
+                            &SyntaxSet::new(&[SyntaxKind::SetClause, SyntaxKind::ConflictAction])
+                        },
+                    )
+                });
+            if assigns {
+                continue;
+            }
+        }
 
         if let Some(original_line_position) = block.line_position() {
             let Some(pos_marker) = elem
@@ -403,7 +424,7 @@ pub fn rebreak_sequence(
     // side to respace them at the same time.
 
     // 1. First find appropriate spans.
-    let spans = identify_rebreak_spans(&elem_buff, root_segment);
+    let spans = identify_rebreak_spans(&elem_buff, root_segment, keeps_token_order);
     let locations = locations_from_spans(spans, &elements);
 
     // Handle each span:

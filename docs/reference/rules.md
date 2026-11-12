@@ -59,7 +59,7 @@ The following rules are available in this create. This list is generated from th
 | LT13 | [layout.start_of_file](#layoutstart_of_file) | Files must not begin with newlines or whitespace. |  |
 | LT14 | [layout.keyword_newline](#layoutkeyword_newline) | Keyword clause newline enforcement. |  |
 | LT15 | [layout.newlines](#layoutnewlines) | Too many consecutive blank lines. |  |
-| LT16 | [layout.multiline_groups](#layoutmultiline_groups) | Groups spanning several lines should break at every boundary. |  |
+| LT16 | [layout.multiline_groups](#layoutmultiline_groups) | Structural line breaks should be in place. |  |
 | OR01 | [oracle.empty_batch](#oracleempty_batch) | Remove empty batches. |  |
 | PG01 | [postgres.excessive_locks](#postgresexcessive_locks) | Avoid excessive locks in PostgreSQL DDL statements. |  |
 | PG02 | [postgres.not_valid_foreign_key](#postgresnot_valid_foreign_key) | Create PostgreSQL foreign keys as NOT VALID before validating separately. |  |
@@ -2255,7 +2255,7 @@ reported, a warning is emitted naming both values.
 
 ### layout.multiline_groups
 
-Groups spanning several lines should break at every boundary.
+Structural line breaks should be in place.
 
 **Code:** `LT16`
 
@@ -2264,10 +2264,24 @@ Groups spanning several lines should break at every boundary.
 **Fixable:** Yes
 Only active with `source_line_breaks = ignore`.
 
-**Anti-pattern**
+**Always on their own line**
 
-A list whose items span several lines keeps some of them on a shared line,
-and a multi-line `CASE` keeps its first branch on the `CASE` line.
+- Children whose syntax type has a strict `line_position`, for example
+  `when_clause` and `else_clause` with `leading:strict`.
+- `AND` and `OR`.
+- `INSERT INTO`, `ON CONFLICT`, `RETURNING`, `SET` in
+  `ON CONFLICT ... DO UPDATE` and in a `SET` statement, `WITH`, the `WHERE` of
+  `CREATE INDEX`, and `ALTER TABLE` actions other than switches such as
+  `ENABLE ROW LEVEL SECURITY`.
+
+**Once a group spans several lines**
+
+- Every item of a comma-separated list that has a multi-line item.
+- Every column of a `CREATE TABLE`.
+- Every branch of a `CASE`, and its `END`.
+- The `ON` of a join.
+
+**Anti-pattern**
 
 ```sql
 WITH a AS (
@@ -2280,15 +2294,14 @@ SELECT
     CASE WHEN x = 1 THEN 'one' -- first
         ELSE 'other'
     END
-FROM a
+FROM a WHERE x = 1 AND y = 2
 ```
 
 **Best practice**
 
-Start every item of such a list, and every branch of such a `CASE`, on its own line.
-
 ```sql
-WITH a AS (
+WITH
+a AS (
     SELECT 1
 ),
 b AS (
@@ -2301,6 +2314,9 @@ SELECT
         ELSE 'other'
     END
 FROM a
+WHERE
+    x = 1
+    AND y = 2
 ```
 
 ### oracle.empty_batch

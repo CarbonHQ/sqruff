@@ -3865,15 +3865,8 @@ pub fn raw_dialect() -> Dialect {
                     Ref::new("TableReferenceSegment").to_matchable(),
                     Ref::new("StarSegment").optional().to_matchable(),
                     one_of(vec![
-                        Sequence::new(vec![
-                            MetaSegment::indent().to_matchable(),
-                            Delimited::new(vec![
-                                Ref::new("AlterTableActionSegment").to_matchable(),
-                            ])
+                        Delimited::new(vec![Ref::new("AlterTableActionSegment").to_matchable()])
                             .to_matchable(),
-                            MetaSegment::dedent().to_matchable(),
-                        ])
-                        .to_matchable(),
                         Sequence::new(vec![
                             Ref::keyword("RENAME").to_matchable(),
                             Ref::keyword("COLUMN").optional().to_matchable(),
@@ -6743,7 +6736,6 @@ pub fn raw_dialect() -> Dialect {
             ])
             .config(|this| this.optional())
             .to_matchable(),
-            MetaSegment::implicit_indent().to_matchable(),
             Ref::keyword("ON").to_matchable(),
             Ref::keyword("ONLY").optional().to_matchable(),
             Ref::new("TableReferenceSegment").to_matchable(),
@@ -6788,7 +6780,6 @@ pub fn raw_dialect() -> Dialect {
             ])
             .config(|this| this.optional())
             .to_matchable(),
-            MetaSegment::dedent().to_matchable(),
             Sequence::new(vec![
                 Ref::keyword("WHERE").to_matchable(),
                 MetaSegment::implicit_indent().to_matchable(),

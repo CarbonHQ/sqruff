@@ -2393,7 +2393,11 @@ pub fn lint_line_length(
             let mut combined_elements = line_elements.clone();
             combined_elements.push(elements[i + 1].clone());
 
-            let spans = identify_rebreak_spans(&combined_elements, root_segment);
+            let spans = identify_rebreak_spans(
+                &combined_elements,
+                root_segment,
+                falls_back_to_implicit_indents,
+            );
             let rebreak_priorities = rebreak_priorities(spans, combined_elements.len());
 
             let mut matched_indents = match_indents(

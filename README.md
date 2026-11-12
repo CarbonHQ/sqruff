@@ -107,15 +107,18 @@ wrapped. It is off by default; `preserve` keeps the behaviour described above.
   only pays for the passes it needs: long lines wrap one nesting level per
   pass, and one deeply nested statement no longer makes every pass re-check the
   whole file. The wrapping stage may use four times `runaway_limit`.
-- LT16 (`layout.multiline_groups`) finishes groups that span lines: every item
-  of a comma-separated list with a multi-line item, and every branch of a
-  multi-line `CASE`, starts its own line.
+- LT16 (`layout.multiline_groups`) places the breaks that follow from structure:
+  children with a strict `line_position`, `AND`/`OR`, and clause keywords
+  that have no syntax type to configure (`INSERT INTO`, `ON CONFLICT`,
+  `RETURNING`, `SET`, `WITH`, index `WHERE`, `ALTER TABLE` actions) always
+  start their line. Once a list, `CASE`, `CREATE TABLE` column list or join
+  condition spans lines, every item, branch, column or `ON` gets its own line.
+- The `=` of a `SET` assignment is never wrapped at; the value wraps inside its
+  own brackets or clauses.
 - Comment lines take the indentation of the next code line, and operators and
   commas are never moved across a comment, so tokens keep their order.
 - A line with no other break point may break where an implicit indent starts.
-  `CREATE TRIGGER`, `CREATE INDEX` and `ALTER TABLE` actions have indentation
-  scopes so their long forms can wrap. In `preserve` mode this indents an
-  existing `ALTER TABLE` action continuation line.
+  `CREATE TRIGGER` has an indentation scope so its long form can wrap.
 - `trailing_comments = keep` leaves a trailing comment on its line, does not
   count its width, and wraps only the code before it.
 - LT07 reports every CTE closing bracket in one pass, in document order. It
