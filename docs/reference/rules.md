@@ -2271,8 +2271,8 @@ Only active with `source_line_breaks = ignore`.
 - `AND` and `OR`.
 - `INSERT INTO`, `ON CONFLICT`, `RETURNING`, `SET` in
   `ON CONFLICT ... DO UPDATE` and in a `SET` statement, `WITH`, the `WHERE` of
-  `CREATE INDEX`, the `USING` and `WITH CHECK` of `CREATE POLICY`, and
-  `ALTER TABLE` actions other than switches such as
+  `CREATE INDEX`, the scope (`AS`, `FOR`, `TO`), `USING` and `WITH CHECK` of
+  `CREATE POLICY`, and `ALTER TABLE` actions other than switches such as
   `ENABLE ROW LEVEL SECURITY`.
 - The branches of a `CASE` that has more than one.
 - The key and value pairs of `jsonb_build_object` and `json_build_object`
@@ -2282,7 +2282,10 @@ Only active with `source_line_breaks = ignore`.
 
 - Every item of a comma-separated list that has a multi-line item, and the
   brackets around any multi-line item.
-- Every column of a `CREATE TABLE` and every parameter of a function definition.
+- Every column of a `CREATE TABLE`, every key of a `CREATE INDEX` and every
+  parameter of a function definition.
+- Not the outer of the doubled brackets around a policy predicate: `((` and
+  `))` stay together.
 - The single branch of a `CASE`, and its `END`.
 - The `ON` of a join.
 

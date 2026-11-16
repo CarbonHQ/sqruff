@@ -115,9 +115,10 @@ wrapped. It is off by default; `preserve` keeps the behaviour described above.
   condition spans lines, every item, branch, column or `ON` gets its own line.
 - The `=` of a `SET` assignment is never wrapped at; the value wraps inside its
   own brackets or clauses.
-- Long lines prefer a bracket that runs past the limit to a comparison or
-  arithmetic operator, split `WHEN ... THEN` before `THEN` first, and wrap a
-  check constraint inside its brackets rather than after the constraint name.
+- Long lines prefer a bracket that runs past the limit to a comparison
+  operator, split `WHEN ... THEN` before `THEN` first, and wrap a check
+  constraint inside its brackets rather than after the constraint name. Other
+  constraints keep the break after the name and then split at their clauses.
   A scope that closes directly before a comma no longer hides the brackets
   inside it from wrapping.
 - Comment lines take the indentation of the next code line, and operators and

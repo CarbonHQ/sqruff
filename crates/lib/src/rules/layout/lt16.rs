@@ -26,7 +26,8 @@ struct Expansion<'a> {
     raws: Vec<ErasedSegment>,
     positions: HashMap<usize, usize>,
     anchored: HashSet<usize>,
-    /// Brackets laid out as key and value pairs, which the list rules skip.
+    /// Brackets laid out by a rule of their own (key and value pairs, doubled
+    /// brackets), which the list rules skip.
     paired: HashSet<usize>,
     results: Vec<LintResult>,
 }
@@ -332,7 +333,7 @@ impl Expansion<'_> {
     }
 
     /// A column list that does not fit on the `CREATE TABLE` line takes one
-    /// line per column or constraint.
+    /// line per column or constraint, and so do the keys of a `CREATE INDEX`.
     fn expand_table_columns(&mut self, node: &ErasedSegment) {
         for child in node.segments() {
             if child.is_type(SyntaxKind::Bracketed) && self.spans_lines(child.segments()) {
@@ -354,22 +355,75 @@ impl Expansion<'_> {
         }
     }
 
-    /// Policy clauses each start their own line: `USING` and `WITH CHECK`.
+    /// Policy clauses each start their own line: what the policy applies to
+    /// (`AS`, `FOR`, `TO`), `USING` and `WITH CHECK`. The doubled brackets of
+    /// a predicate stay together.
     fn place_policy_clauses(&mut self, node: &ErasedSegment) {
         let children = node.segments();
+        let mut placed_scope = false;
 
         for (index, child) in children.iter().enumerate() {
+            let starts_scope = !placed_scope
+                && (child.is_keyword("AS") || child.is_keyword("FOR") || child.is_keyword("TO"));
             let starts_check = child.is_keyword("WITH")
                 && children[index + 1..]
                     .iter()
                     .find(|next| next.is_type(SyntaxKind::Keyword))
                     .is_some_and(|next| next.is_keyword("CHECK"));
-            if !(child.is_type(SyntaxKind::PolicyUsingClause) || starts_check) {
+            placed_scope |= starts_scope;
+
+            if child.is_type(SyntaxKind::Bracketed) {
+                self.hug_doubled_bracket(child);
+            } else if child.is_type(SyntaxKind::PolicyUsingClause) {
+                for bracket in child.segments() {
+                    if bracket.is_type(SyntaxKind::Bracketed) {
+                        self.hug_doubled_bracket(bracket);
+                    }
+                }
+            }
+
+            if !(child.is_type(SyntaxKind::PolicyUsingClause) || starts_check || starts_scope) {
                 continue;
             }
             if let Some((first, _)) = self.child_span(child) {
                 self.break_before(first);
             }
+        }
+    }
+
+    /// A bracket whose whole content is another bracket is not expanded on
+    /// its own: `((` and `))` stay together around the inner content.
+    fn hug_doubled_bracket(&mut self, bracket: &ErasedSegment) {
+        if Self::sole_inner_bracket(bracket).is_some() {
+            self.paired.insert(bracket.addr());
+        }
+    }
+
+    fn sole_inner_bracket(bracket: &ErasedSegment) -> Option<ErasedSegment> {
+        let mut content = bracket.segments().iter().filter(|child| {
+            !(child.is_type(SyntaxKind::StartBracket)
+                || child.is_type(SyntaxKind::EndBracket)
+                || child.is_whitespace()
+                || child.is_meta()
+                || child.is_comment())
+        });
+        let only = content.next()?;
+        if content.next().is_some() {
+            return None;
+        }
+
+        if only.is_type(SyntaxKind::Bracketed) {
+            Some(only.clone())
+        } else if only.is_type(SyntaxKind::Expression) {
+            // An expression node may wrap the inner bracket.
+            let mut inner = only
+                .segments()
+                .iter()
+                .filter(|child| !(child.is_whitespace() || child.is_meta() || child.is_comment()));
+            let first = inner.next()?;
+            (inner.next().is_none() && first.is_type(SyntaxKind::Bracketed)).then(|| first.clone())
+        } else {
+            None
         }
     }
 
@@ -468,7 +522,9 @@ impl Expansion<'_> {
         if node.is_type(SyntaxKind::AlterTableStatement) {
             self.place_alter_table_actions(node);
         }
-        if node.is_type(SyntaxKind::CreateTableStatement) {
+        if node.is_type(SyntaxKind::CreateTableStatement)
+            || node.is_type(SyntaxKind::CreateIndexStatement)
+        {
             self.expand_table_columns(node);
         }
 
@@ -524,8 +580,8 @@ Only active with `source_line_breaks = ignore`.
 - `AND` and `OR`.
 - `INSERT INTO`, `ON CONFLICT`, `RETURNING`, `SET` in
   `ON CONFLICT ... DO UPDATE` and in a `SET` statement, `WITH`, the `WHERE` of
-  `CREATE INDEX`, the `USING` and `WITH CHECK` of `CREATE POLICY`, and
-  `ALTER TABLE` actions other than switches such as
+  `CREATE INDEX`, the scope (`AS`, `FOR`, `TO`), `USING` and `WITH CHECK` of
+  `CREATE POLICY`, and `ALTER TABLE` actions other than switches such as
   `ENABLE ROW LEVEL SECURITY`.
 - The branches of a `CASE` that has more than one.
 - The key and value pairs of `jsonb_build_object` and `json_build_object`
@@ -535,7 +591,10 @@ Only active with `source_line_breaks = ignore`.
 
 - Every item of a comma-separated list that has a multi-line item, and the
   brackets around any multi-line item.
-- Every column of a `CREATE TABLE` and every parameter of a function definition.
+- Every column of a `CREATE TABLE`, every key of a `CREATE INDEX` and every
+  parameter of a function definition.
+- Not the outer of the doubled brackets around a policy predicate: `((` and
+  `))` stay together.
 - The single branch of a `CASE`, and its `END`.
 - The `ON` of a join.
 

@@ -43,6 +43,9 @@ line_position = leading
 [sqruff:layout:type:function_parameter_list]
 spacing_before = single
 
+[sqruff:layout:type:referenced_column_list]
+spacing_before = single
+
 [sqruff:layout:type:values_clause]
 keyword_line_position = alone
 
@@ -370,7 +373,7 @@ set
 }
 
 #[test]
-fn table_columns_and_index_keys_wrap_differently() {
+fn table_columns_and_index_keys_take_one_line_each() {
     assert_canonical(
         "\
 create table a_schema.a_rather_long_table_name (
@@ -382,7 +385,9 @@ create table a_schema.a_rather_long_table_name (
 create table t (id uuid not null, name text not null);
 
 create index a_rather_long_index_name on a_schema.a_rather_long_table_name using btree (
-  id, a_rather_long_column_name, another_column
+  id,
+  a_rather_long_column_name,
+  another_column
 )
 where
   (another_column is not null);
@@ -429,12 +434,17 @@ from
 fn policy_clauses_and_function_parameters_take_their_own_lines() {
     assert_canonical(
         "\
-create policy p on t for select to a_role
+create policy p on t
+  for select to a_role
 using (true);
 
-create policy q on t as restrictive to a_role
+create policy q on t
+  as restrictive to a_role
 using ((org_id = current_org()))
-with check ((org_id = current_org()));
+with check ((
+  select
+    a_schema.a_function(variadic array['a-permission'::text]) as allowed
+));
 
 create function a_schema.a_function_name (
   first_parameter uuid[] default null::uuid[],
@@ -461,6 +471,19 @@ create table t (
   ),
   other text
 );
+",
+    );
+}
+
+#[test]
+fn foreign_keys_split_at_their_clauses() {
+    assert_canonical(
+        "\
+alter table only a_schema.a_table
+add constraint a_table_another_table_id_fkey
+  foreign key (org_id, another_table_id)
+  references a_schema.another_table (org_id, id)
+  on delete set null (another_table_id);
 ",
     );
 }

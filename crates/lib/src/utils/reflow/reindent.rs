@@ -1846,6 +1846,28 @@ fn match_indents(
         if closes_before_comma {
             continue;
         }
+        // The doubled brackets of a policy predicate stay together.
+        let between_doubled_brackets = falls_back_to_implicit_indents
+            && idx > 0
+            && line_elements.get(idx + 1).is_some_and(|next| {
+                let previous = &line_elements[idx - 1];
+                let doubled = (previous.class_types().contains(SyntaxKind::StartBracket)
+                    && next.class_types().contains(SyntaxKind::StartBracket))
+                    || (previous.class_types().contains(SyntaxKind::EndBracket)
+                        && next.class_types().contains(SyntaxKind::EndBracket));
+
+                doubled
+                    && next.as_block().is_some_and(|block| {
+                        block
+                            .depth_info()
+                            .stack_class_types
+                            .iter()
+                            .any(|types| types.contains(SyntaxKind::CreatePolicyStatement))
+                    })
+            });
+        if between_doubled_brackets {
+            continue;
+        }
         for (b, indices) in nmi {
             matched_indents.entry(b).or_default().extend(indices);
         }
@@ -2484,9 +2506,13 @@ pub fn lint_line_length(
                     start = end + 1;
                 }
                 // When source line breaks are ignored, a bracket that runs
-                // past the limit is preferred to a comparison or arithmetic
-                // operator whether or not the operand would then fit.
-                if (operand_overflows || falls_back_to_implicit_indents)
+                // past the limit is preferred to a comparison operator whether
+                // or not the operand would then fit.
+                // Comparison operators have priority 5. Clause boundaries such as
+                // a foreign key's REFERENCES sit above that and keep their turn.
+                let prefers_any_bracket =
+                    falls_back_to_implicit_indents && (target_balance.fract() - 0.55).abs() < 0.001;
+                if (operand_overflows || prefers_any_bracket)
                     && target_balance.fract() >= 0.55
                     && let Some(points) =
                         matched_indents.get(&FloatTypeWrapper::new(integer_balance))
@@ -2495,7 +2521,7 @@ pub fn lint_line_length(
                             && elem_buffer[point - 1]
                                 .class_types()
                                 .contains(SyntaxKind::StartBracket)
-                            && (if falls_back_to_implicit_indents {
+                            && (if prefers_any_bracket {
                                 // Any bracket will do, provided it is the part
                                 // that runs past the limit: opening one that
                                 // ends before the limit would shorten nothing.
@@ -2522,10 +2548,10 @@ pub fn lint_line_length(
                     target_balance = integer_balance;
                 }
 
-                // A scope without brackets, such as a constraint's body, is
-                // not worth opening on a new line when that body is too long
-                // for a line anyway, or is a check: break at the brackets
-                // inside it instead.
+                // A check constraint wraps inside its brackets rather than after
+                // the constraint name, so short and long ones in one table look
+                // alike. Other constraint bodies keep the break after the name
+                // and then split at their clauses.
                 if falls_back_to_implicit_indents && target_balance.fract() == 0.0 {
                     let openers: Vec<usize> = matched_indents
                         [&FloatTypeWrapper::new(target_balance)]
@@ -2553,19 +2579,12 @@ pub fn lint_line_length(
 
                     if opens_without_bracket && deeper_balance.is_finite() {
                         let body_start = openers[openers.len() - 1] + 1;
-                        let body_width = tables.layout.base_indent
-                            + tables.layout.width(&current_indent)
-                            + tables.layout.width(single_indent)
-                            + source_char_len(&elem_buffer[body_start..i], &tables.layout);
-
-                        // A check constraint always wraps inside its brackets,
-                        // so short and long ones in one table look alike.
                         let is_check = elem_buffer[body_start]
                             .segments()
                             .first()
                             .is_some_and(|segment| segment.is_keyword("CHECK"));
 
-                        if is_check || body_width > line_length_limit {
+                        if is_check {
                             target_balance = deeper_balance;
                         }
                     }
