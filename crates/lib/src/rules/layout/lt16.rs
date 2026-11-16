@@ -26,6 +26,8 @@ struct Expansion<'a> {
     raws: Vec<ErasedSegment>,
     positions: HashMap<usize, usize>,
     anchored: HashSet<usize>,
+    /// Brackets laid out as key and value pairs, which the list rules skip.
+    paired: HashSet<usize>,
     results: Vec<LintResult>,
 }
 
@@ -58,9 +60,19 @@ impl Expansion<'_> {
 
     fn spans_lines(&self, segments: &[ErasedSegment]) -> bool {
         self.text_span(segments).is_some_and(|(first, last)| {
+            // A host interpolation that prints over several lines makes the
+            // code around it span lines just as a line break does.
             self.raws[first..last]
                 .iter()
                 .any(|raw| raw.is_type(SyntaxKind::Newline))
+                || self.raws[first..=last].iter().any(|raw| {
+                    self.context
+                        .tables
+                        .layout
+                        .rendered(raw.raw())
+                        .contains('\n')
+                        && !raw.raw().contains('\n')
+                })
         })
     }
 
@@ -105,8 +117,18 @@ impl Expansion<'_> {
         }
     }
 
+    /// A `CASE` with several branches takes one line per branch. One with a
+    /// single `WHEN` and no `ELSE` reads fine inline and only expands when it
+    /// has to span lines.
     fn expand_case(&mut self, node: &ErasedSegment) {
-        if !self.spans_lines(node.segments()) {
+        let branches = node
+            .segments()
+            .iter()
+            .filter(|child| {
+                child.is_type(SyntaxKind::WhenClause) || child.is_type(SyntaxKind::ElseClause)
+            })
+            .count();
+        if branches < 2 && !self.spans_lines(node.segments()) {
             return;
         }
 
@@ -332,7 +354,114 @@ impl Expansion<'_> {
         }
     }
 
+    /// Policy clauses each start their own line: `USING` and `WITH CHECK`.
+    fn place_policy_clauses(&mut self, node: &ErasedSegment) {
+        let children = node.segments();
+
+        for (index, child) in children.iter().enumerate() {
+            let starts_check = child.is_keyword("WITH")
+                && children[index + 1..]
+                    .iter()
+                    .find(|next| next.is_type(SyntaxKind::Keyword))
+                    .is_some_and(|next| next.is_keyword("CHECK"));
+            if !(child.is_type(SyntaxKind::PolicyUsingClause) || starts_check) {
+                continue;
+            }
+            if let Some((first, _)) = self.child_span(child) {
+                self.break_before(first);
+            }
+        }
+    }
+
+    /// The first bracket directly inside `node`, looking through wrappers
+    /// such as the contents node of a function call.
+    fn bracket_of(node: &ErasedSegment) -> Option<ErasedSegment> {
+        node.segments().iter().find_map(|child| {
+            if child.is_type(SyntaxKind::Bracketed) {
+                Some(child.clone())
+            } else if child.is_type(SyntaxKind::FunctionContents) {
+                Self::bracket_of(child)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// `jsonb_build_object('key', value, ...)` with several pairs takes one
+    /// line per pair, so each key stays next to its value.
+    fn pair_object_arguments(&mut self, node: &ErasedSegment) {
+        let builds_object = node
+            .segments()
+            .iter()
+            .find(|child| child.is_type(SyntaxKind::FunctionName))
+            .is_some_and(|name| {
+                let name = name.raw();
+                name.eq_ignore_ascii_case("jsonb_build_object")
+                    || name.eq_ignore_ascii_case("json_build_object")
+            });
+        if !builds_object {
+            return;
+        }
+        let Some(bracket) = Self::bracket_of(node) else {
+            return;
+        };
+        let commas: Vec<usize> = bracket
+            .segments()
+            .iter()
+            .filter(|child| child.is_type(SyntaxKind::Comma))
+            .filter_map(|comma| self.position(comma))
+            .collect();
+        // Keys and values come in twos: three commas make two pairs.
+        if commas.len() < 3 || commas.len() % 2 == 0 {
+            return;
+        }
+
+        self.paired.insert(bracket.addr());
+
+        for child in bracket.segments() {
+            let Some(position) = self.position(child) else {
+                continue;
+            };
+            if child.is_type(SyntaxKind::StartBracket) {
+                self.break_after(position);
+            } else if child.is_type(SyntaxKind::EndBracket) {
+                self.break_before(position);
+            }
+        }
+        for comma in commas.into_iter().skip(1).step_by(2) {
+            self.break_after(comma);
+        }
+    }
+
+    /// Parameters of a function definition that do not fit on its line take
+    /// one line each.
+    fn expand_function_parameters(&mut self, node: &ErasedSegment) {
+        let bracket = if node
+            .segments()
+            .iter()
+            .any(|child| child.is_type(SyntaxKind::StartBracket))
+        {
+            Some(node.clone())
+        } else {
+            Self::bracket_of(node)
+        };
+        if let Some(bracket) = bracket
+            && self.spans_lines(bracket.segments())
+        {
+            self.break_list(&bracket);
+        }
+    }
+
     fn visit(&mut self, node: &ErasedSegment) {
+        if node.is_type(SyntaxKind::CreatePolicyStatement) {
+            self.place_policy_clauses(node);
+        }
+        if node.is_type(SyntaxKind::Function) {
+            self.pair_object_arguments(node);
+        }
+        if node.is_type(SyntaxKind::FunctionParameterList) {
+            self.expand_function_parameters(node);
+        }
         if node.is_type(SyntaxKind::JoinClause) {
             self.place_join_condition(node);
         }
@@ -351,13 +480,15 @@ impl Expansion<'_> {
             self.expand_case(node);
         }
 
-        // One select target per line is LT09's decision.
+        // One select target per line is LT09's decision. A bracket expands
+        // around a multi-line item whether or not it holds a list.
         let is_delimited = !node.is_type(SyntaxKind::SelectClause)
             && node
                 .segments()
                 .iter()
                 .any(|child| child.is_type(SyntaxKind::Comma));
-        if is_delimited {
+        let is_paired = self.paired.contains(&node.addr());
+        if (is_delimited || node.is_type(SyntaxKind::Bracketed)) && !is_paired {
             self.expand_delimited(node);
         }
 
@@ -393,14 +524,19 @@ Only active with `source_line_breaks = ignore`.
 - `AND` and `OR`.
 - `INSERT INTO`, `ON CONFLICT`, `RETURNING`, `SET` in
   `ON CONFLICT ... DO UPDATE` and in a `SET` statement, `WITH`, the `WHERE` of
-  `CREATE INDEX`, and `ALTER TABLE` actions other than switches such as
+  `CREATE INDEX`, the `USING` and `WITH CHECK` of `CREATE POLICY`, and
+  `ALTER TABLE` actions other than switches such as
   `ENABLE ROW LEVEL SECURITY`.
+- The branches of a `CASE` that has more than one.
+- The key and value pairs of `jsonb_build_object` and `json_build_object`
+  with more than one pair, one pair per line.
 
 **Once a group spans several lines**
 
-- Every item of a comma-separated list that has a multi-line item.
-- Every column of a `CREATE TABLE`.
-- Every branch of a `CASE`, and its `END`.
+- Every item of a comma-separated list that has a multi-line item, and the
+  brackets around any multi-line item.
+- Every column of a `CREATE TABLE` and every parameter of a function definition.
+- The single branch of a `CASE`, and its `END`.
 - The `ON` of a join.
 
 **Anti-pattern**
@@ -468,6 +604,7 @@ WHERE
             raws,
             positions,
             anchored: HashSet::new(),
+            paired: HashSet::new(),
             results: Vec::new(),
         };
 

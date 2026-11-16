@@ -20,6 +20,8 @@ implicit_indents = allow
 indented_joins = True
 indented_ctes = True
 indented_on_contents = False
+indented_then = False
+indented_then_contents = False
 trailing_comments = keep
 
 [sqruff:rules:layout.newlines]
@@ -33,10 +35,13 @@ single_target_policy = new_line
 line_position = trailing:attached
 
 [sqruff:layout:type:when_clause]
-line_position = leading:strict
+line_position = leading
 
 [sqruff:layout:type:else_clause]
-line_position = leading:strict
+line_position = leading
+
+[sqruff:layout:type:function_parameter_list]
+spacing_before = single
 
 [sqruff:layout:type:values_clause]
 keyword_line_position = alone
@@ -381,6 +386,81 @@ create index a_rather_long_index_name on a_schema.a_rather_long_table_name using
 )
 where
   (another_column is not null);
+",
+    );
+}
+
+#[test]
+fn single_branch_case_stays_inline_and_brackets_expand_around_a_multi_line_one() {
+    assert_canonical(
+        "\
+select
+  max(case when kind = 'a' then url end) as a,
+  array_agg(
+    distinct case
+      when a_rather_long_table_name.a_long_column_name = any (values_list)
+      then a_rather_long_table_name.another_long_column_name
+      else another_table.another_long_column_name
+    end
+  ) as ids
+from
+  t;
+",
+    );
+}
+
+#[test]
+fn object_arguments_pair_keys_with_values() {
+    assert_canonical(
+        "\
+select
+  jsonb_build_object('one', 1) as single,
+  jsonb_build_object(
+    'first', t.a,
+    'second', t.b
+  ) as pairs
+from
+  t;
+",
+    );
+}
+
+#[test]
+fn policy_clauses_and_function_parameters_take_their_own_lines() {
+    assert_canonical(
+        "\
+create policy p on t for select to a_role
+using (true);
+
+create policy q on t as restrictive to a_role
+using ((org_id = current_org()))
+with check ((org_id = current_org()));
+
+create function a_schema.a_function_name (
+  first_parameter uuid[] default null::uuid[],
+  second_parameter text default null::text
+) returns boolean language sql as $$ select true $$;
+
+create function f () returns uuid language sql as $$ select 1 $$;
+",
+    );
+}
+
+#[test]
+fn check_constraints_wrap_inside_their_brackets() {
+    assert_canonical(
+        "\
+create table t (
+  id uuid not null,
+  constraint a_rather_long_constraint_name_check check (
+    (
+      a_column = any (
+        array['first_long_value'::text, 'second_long_value'::text]
+      )
+    )
+  ),
+  other text
+);
 ",
     );
 }

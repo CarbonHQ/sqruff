@@ -1801,6 +1801,10 @@ fn is_point_before_final_statement_terminator(
     found_terminator
 }
 
+/// Below the priorities of operators, which start at 0.01 for commas, so a
+/// `THEN` is the first place a `WHEN` clause breaks.
+const THEN_BREAK_PRIORITY: f64 = 0.005;
+
 fn match_indents(
     line_elements: ReflowSequenceType,
     rebreak_priorities: HashMap<usize, usize>,
@@ -1831,8 +1835,32 @@ fn match_indents(
         if is_point_before_final_statement_terminator(&line_elements, idx) {
             continue;
         }
+        // A scope that closes directly before a comma is never broken there.
+        // Left in, it would be the outermost candidate of its line and stop
+        // the brackets inside it from being considered at all.
+        let closes_before_comma = falls_back_to_implicit_indents
+            && indent_stats.impulse < 0
+            && line_elements
+                .get(idx + 1)
+                .is_some_and(|next| next.class_types().contains(SyntaxKind::Comma));
+        if closes_before_comma {
+            continue;
+        }
         for (b, indices) in nmi {
             matched_indents.entry(b).or_default().extend(indices);
+        }
+
+        // `WHEN condition` and `THEN result` split before `THEN` ahead of
+        // any break inside the condition.
+        let precedes_then = falls_back_to_implicit_indents
+            && line_elements.get(idx + 1).is_some_and(|next| {
+                next.segments()
+                    .first()
+                    .is_some_and(|segment| segment.is_keyword("THEN"))
+            });
+        if precedes_then {
+            let key = FloatTypeWrapper::new(balance as f64 + 0.5 + THEN_BREAK_PRIORITY);
+            matched_indents.entry(key).or_default().push(e_idx);
         }
 
         let Some(&priority) = rebreak_priorities.get(&idx) else {
@@ -2455,7 +2483,10 @@ pub fn lint_line_length(
                     }
                     start = end + 1;
                 }
-                if operand_overflows
+                // When source line breaks are ignored, a bracket that runs
+                // past the limit is preferred to a comparison or arithmetic
+                // operator whether or not the operand would then fit.
+                if (operand_overflows || falls_back_to_implicit_indents)
                     && target_balance.fract() >= 0.55
                     && let Some(points) =
                         matched_indents.get(&FloatTypeWrapper::new(integer_balance))
@@ -2464,15 +2495,80 @@ pub fn lint_line_length(
                             && elem_buffer[point - 1]
                                 .class_types()
                                 .contains(SyntaxKind::StartBracket)
-                            && point > 2
-                            && elem_buffer[point - 3]
-                                .class_types()
-                                .contains(SyntaxKind::FunctionNameIdentifier)
+                            && (if falls_back_to_implicit_indents {
+                                // Any bracket will do, provided it is the part
+                                // that runs past the limit: opening one that
+                                // ends before the limit would shorten nothing.
+                                let closer = points
+                                    .iter()
+                                    .copied()
+                                    .filter(|&other| other > point)
+                                    .min()
+                                    .unwrap_or(i);
+                                // Measured through the closing bracket itself.
+                                let end = (closer + 1).min(i);
+                                rendered_column(&elem_buffer[..=end], &tables.layout)
+                                    > line_length_limit
+                            } else {
+                                point > 2
+                                    && elem_buffer[point - 3]
+                                        .class_types()
+                                        .contains(SyntaxKind::FunctionNameIdentifier)
+                            })
                             && rendered_column(&elem_buffer[..=point], &tables.layout)
                                 <= line_length_limit
                     })
                 {
                     target_balance = integer_balance;
+                }
+
+                // A scope without brackets, such as a constraint's body, is
+                // not worth opening on a new line when that body is too long
+                // for a line anyway, or is a check: break at the brackets
+                // inside it instead.
+                if falls_back_to_implicit_indents && target_balance.fract() == 0.0 {
+                    let openers: Vec<usize> = matched_indents
+                        [&FloatTypeWrapper::new(target_balance)]
+                        .iter()
+                        .copied()
+                        .filter(|&point| {
+                            point != i
+                                && elem_buffer[point]
+                                    .as_point()
+                                    .is_some_and(|point| point.indent_impulse().impulse > 0)
+                        })
+                        .collect();
+                    let opens_without_bracket = !openers.is_empty()
+                        && openers.iter().all(|&point| {
+                            point == 0
+                                || !elem_buffer[point - 1]
+                                    .class_types()
+                                    .contains(SyntaxKind::StartBracket)
+                        });
+                    let deeper_balance = matched_indents
+                        .keys()
+                        .map(|key| key.into_f64())
+                        .filter(|key| key.fract() == 0.0 && *key > target_balance)
+                        .fold(f64::INFINITY, f64::min);
+
+                    if opens_without_bracket && deeper_balance.is_finite() {
+                        let body_start = openers[openers.len() - 1] + 1;
+                        let body_width = tables.layout.base_indent
+                            + tables.layout.width(&current_indent)
+                            + tables.layout.width(single_indent)
+                            + source_char_len(&elem_buffer[body_start..i], &tables.layout);
+
+                        // A check constraint always wraps inside its brackets,
+                        // so short and long ones in one table look alike.
+                        let is_check = elem_buffer[body_start]
+                            .segments()
+                            .first()
+                            .is_some_and(|segment| segment.is_keyword("CHECK"));
+
+                        if is_check || body_width > line_length_limit {
+                            target_balance = deeper_balance;
+                        }
+                    }
                 }
                 let mut desired_indent = current_indent.to_string();
 

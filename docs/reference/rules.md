@@ -2271,14 +2271,19 @@ Only active with `source_line_breaks = ignore`.
 - `AND` and `OR`.
 - `INSERT INTO`, `ON CONFLICT`, `RETURNING`, `SET` in
   `ON CONFLICT ... DO UPDATE` and in a `SET` statement, `WITH`, the `WHERE` of
-  `CREATE INDEX`, and `ALTER TABLE` actions other than switches such as
+  `CREATE INDEX`, the `USING` and `WITH CHECK` of `CREATE POLICY`, and
+  `ALTER TABLE` actions other than switches such as
   `ENABLE ROW LEVEL SECURITY`.
+- The branches of a `CASE` that has more than one.
+- The key and value pairs of `jsonb_build_object` and `json_build_object`
+  with more than one pair, one pair per line.
 
 **Once a group spans several lines**
 
-- Every item of a comma-separated list that has a multi-line item.
-- Every column of a `CREATE TABLE`.
-- Every branch of a `CASE`, and its `END`.
+- Every item of a comma-separated list that has a multi-line item, and the
+  brackets around any multi-line item.
+- Every column of a `CREATE TABLE` and every parameter of a function definition.
+- The single branch of a `CASE`, and its `END`.
 - The `ON` of a join.
 
 **Anti-pattern**
